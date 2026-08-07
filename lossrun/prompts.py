@@ -1,4 +1,4 @@
-"""Prompt construction for layout discovery and table extraction.
+"""Prompt construction for layout discovery, table extraction and QA review.
 
 Column semantics come verbatim from schema.json — this module frames them and
 adds `COLUMN_HINTS`, the document-shape guidance measured against golden data.
@@ -221,6 +221,123 @@ def extraction_prompt(
             "not re-emit anything before it."
         )
 
+    return "\n".join(lines)
+
+
+QA_OUTPUT_CONTRACT = """OUTPUT FORMAT — return one JSON object and nothing else. No prose,
+no markdown fence, no explanation:
+
+{"findings": [{"row": [<Policy Number>, <Claim Number>, <Claimant Name>],
+               "column": "<the column that is wrong>",
+               "correct_value": "<what the document prints, character for character>",
+               "reason": "<one short sentence>"}],
+ "missing_rows": [{"row": [<Policy Number>, <Claim Number>, <Claimant Name>],
+                   "reason": "<one short sentence>"}]}
+
+Report ONLY cells that are wrong. A chunk with nothing wrong returns
+`{"findings": [], "missing_rows": []}` — that is the expected answer for a clean
+chunk, not a failure to look."""
+
+
+def qa_instructions(schema: TableSchema) -> str:
+    """System-level framing for a QA review call.
+
+    The review is told what the cleaning stage already did to the values it is
+    looking at. Without that it reports every rendered date and stripped currency
+    symbol as an error, and the real findings drown in the noise.
+    """
+    row_columns = [c.name for c in schema.row_columns]
+    return f"""You are auditing a claim table that has already been extracted from an
+insurance loss-run report. The attached PDF is the exact pages those rows were
+read from. You are NOT extracting the table again.
+
+Your job is to find cells that are WRONG, and to say what the document actually
+prints in their place.
+
+{VERBATIM_CLAUSE}
+
+WHAT COUNTS AS WRONG
+- A value that does not appear in the document for that claim — an invented
+  figure, a name or number the page does not carry.
+- A value read out of the wrong column, or off a neighbouring claim's row.
+- A value the document prints differently: a changed digit or letter, a dropped
+  or added leading zero, a "corrected" spelling. `C003` read as `C0000003` and
+  `McAllister` read as `MacAllister` are both errors.
+- A cell carrying a value where the document prints none for that claim.
+
+WHAT IS NOT WRONG — do not report these:
+- Formatting. The values below have already been rendered into a fixed form:
+  dates as MM/DD/YYYY, amounts as plain decimals with currency symbols,
+  thousands separators and trailing zeros removed, and accounting parentheses
+  turned into a minus sign. `$1,200.00` correctly appears below as `1200`, and
+  `(450.75)` as `-450.75`. A difference that is only formatting is not a finding.
+- `N/A` in a cell the document genuinely leaves empty for that claim.
+- A document-level value repeated on every row — the insured, the valuation
+  date and the policy total are meant to repeat.
+
+PROPOSING A CORRECTION
+- `correct_value` must be copied from the attached pages character for character.
+  Never propose a value you cannot point at on the page. If you believe a cell is
+  wrong but cannot read what belongs there, leave it out rather than guessing.
+- Use `N/A` as `correct_value` when the document prints nothing for that cell.
+- `row` identifies which row you are correcting: give its
+  [Policy Number, Claim Number, Claimant Name] exactly as they appear in the
+  table below, even when one of those three is itself the cell you are correcting.
+
+MISSING ROWS
+Also list any claim row printed on the attached pages that is absent from the
+table below. These are reported to a human rather than added to the table, so
+give only the row key and why you believe it was missed.
+
+{QA_OUTPUT_CONTRACT}
+
+The columns under review, in the order the rows below use:
+{json.dumps(row_columns)}
+
+Column definitions:
+
+{column_spec_block(schema, row_columns)}"""
+
+
+def qa_prompt(
+    *,
+    chunk_index: int,
+    chunk_total: int,
+    start_page: int,
+    end_page: int,
+    total_pages: int,
+    columns: list[str],
+    rows: list[list[str]],
+    batch_index: int = 1,
+    batch_total: int = 1,
+) -> str:
+    """The per-chunk user prompt: which pages, and the rows read from them."""
+    if chunk_total == 1:
+        lines = [
+            f"The attached PDF is the complete {total_pages}-page loss-run report."
+        ]
+    else:
+        lines = [
+            f"The attached PDF is pages {start_page}-{end_page} of a "
+            f"{total_pages}-page loss-run report (chunk {chunk_index} of "
+            f"{chunk_total})."
+        ]
+
+    if batch_total > 1:
+        lines.append(
+            f"The rows read from these pages are being reviewed in "
+            f"{batch_total} parts; this is part {batch_index}. Audit only the rows "
+            f"given here. A row printed on these pages but absent below may simply "
+            f"belong to another part, so report it as missing only if you are "
+            f"confident it was never extracted."
+        )
+
+    lines.append(
+        "\nBelow is the table already extracted from these pages, as a positional "
+        "array per row. Check every cell against the pages and report only what is "
+        "wrong."
+    )
+    lines.append(json.dumps({"columns": columns, "rows": rows}))
     return "\n".join(lines)
 
 

@@ -74,28 +74,28 @@ ledgers.
 
 | Flag | Effect |
 | --- | --- |
-| `--model MODEL` | Override the primary model |
-| `--consensus A B` | Override the consensus pair |
-| `--single-model` | Skip consensus; run the primary model only (roughly half the cost) |
+| `--model MODEL` | Override the extracting model |
+| `--qa-model MODEL` | Model that reviews the extracted table (default: the extracting model) |
 | `--config PATH` | Alternate `config.yaml` |
 | `--schema PATH` | Alternate `schema.json` |
 | `--out DIR` | Output root (default `out/`); runs land in `<out>/<route>_calls/` |
 | `--base-url URL` | Alternate API base |
 | `--effort LEVEL` | Force one reasoning effort across every model |
 | `--provider NAME` | Force one route — `auto`, `superapp`, `openai`, `gemini` — ignoring per-model overrides |
-| `--no-adjudicate` | Keep the primary model's value on every conflict instead of asking a third opinion |
+| `--no-qa` | Ship the extracted table unreviewed, skipping the QA pass |
 | `--results-out DIR` | Where the batch report goes (default `initial_results/`) |
 
 ## Models
 
-Configured in `config.yaml`, not in code. The default pair is
-`openai/gpt-5.6-luna` + `gemini/gemini-3.5-flash-lite`, one per vendor and each
-called directly — cross-provider so the two do not correlate their errors.
-Flash-Lite is reachable only on the direct route; SuperApp rejects it with
-`400 Unsupported model`. For a GPT-only endpoint:
+Configured in `config.yaml`, not in code. One model extracts and one reviews, and
+by default they are the same pin: `openai/gpt-5.6-luna` at `max` effort, called
+directly. There is no second extraction pass — see [QA](#qa) below.
+
+Point the review at a different pin when you want a second opinion on the reading
+rather than a second transcription of it:
 
 ```bash
-uv run lossrun extract doc.pdf --consensus openai/gpt-5.6-luna openai/gpt-5.6-terra
+uv run lossrun extract doc.pdf --qa-model gemini/gemini-3.5-flash-lite
 ```
 
 Adding a model means two config entries: a `models.overrides` page ceiling and a
@@ -133,6 +133,33 @@ timeout` far below the 25 MiB it advertises, so that route splits windows at
 1 MiB while a direct call uses the full 20 MiB inline ceiling. A model that falls
 back therefore still gets the tighter window.
 
+## QA
+
+The table is extracted once, then reviewed. The review gets one call per chunk
+carrying that chunk's pages again plus the rows read from them, and reports only
+the cells it believes are wrong along with what the document prints instead.
+
+A correction is written into the final table **only when the value it proposes
+occurs in the document's own text layer**. That guard is what keeps a reviewer
+that can invent a value from putting one in the deliverable — anything it cannot
+prove is logged as `qa_unverified` and the extracted value stands. The one
+exception is a correction to `N/A`: clearing a cell removes a value rather than
+introducing one, so it needs no proof, and an invented figure is exactly what the
+stage exists to catch.
+
+The cost of that guard is a scanned document, which has no text layer for the
+check to consult — every finding is reported there and none applied. `qa_row_missing`
+lists claims the review found on the page but not in the table; they are reported,
+never added.
+
+```yaml
+qa:
+  enabled: true
+  model: ""        # empty means the extracting model
+```
+
+`--no-qa` skips the stage entirely.
+
 ## Reading a result
 
 Check these in order:
@@ -143,18 +170,24 @@ Check these in order:
    cell listed in `Accuracy Mismatches`. This is the number that matters.
 3. **Issues sheet** — `key_not_found` means a claim number or claimant name does
    not appear verbatim in the document text, which is the hallucination signature.
-   `model_disagreement` lists every cell the two models read differently, and
-   `adjudication_declined` marks the ones a third opinion would not settle —
-   those are the cells worth a human's time.
+   `qa_corrected` is the audit trail of what the review changed; `qa_unverified`
+   marks a cell the review wanted to change but could not prove, and
+   `qa_row_missing` a claim it found on the page but not in the table — those two
+   are the cells worth a human's time.
 4. **Telemetry** — cost and token counts for the run. A non-zero
    `calls_without_usage` means the cost is a lower bound.
 
 ## Tests
 
 ```bash
-uv run pytest
+uv run python -m pytest
 ```
 
 Covers page windowing, JSON repair on truncated output, row mapping, merge and
-conflict classification, cost arithmetic, and the full pipeline against a
-synthetic loss run with the API stubbed out.
+conflict classification, the QA guard, cost arithmetic, and the full pipeline
+against a synthetic loss run with the API stubbed out.
+
+> Use `python -m pytest`, not `uv run pytest`. The `.venv/bin/pytest` console
+> script in this checkout carries another project's interpreter path, so it runs
+> a different copy of `lossrun` entirely and reports passes that mean nothing
+> here. Recreating the venv (`rm -rf .venv && uv sync`) fixes it.

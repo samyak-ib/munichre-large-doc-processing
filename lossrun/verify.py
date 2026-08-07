@@ -46,6 +46,25 @@ class KeyIssue:
     verdict: str
 
 
+def text_haystack(page_texts: list[str]) -> str:
+    """The document's text layer, whitespace removed, ready for lookups.
+
+    Built once per document because every caller checks many values against it.
+    """
+    return _normalize(" \n ".join(page_texts))
+
+
+def appears_verbatim(value: str, haystack: str) -> bool:
+    """Whether a value occurs in a `text_haystack`, ignoring case and whitespace.
+
+    Case is ignored here, unlike in `verify_keys`, because the callers of this
+    are asking a different question: not "was this copied exactly" but "does the
+    document support this value at all". A model that reads `CLOSED` off a page
+    printing `Closed` has read the page, not invented it.
+    """
+    return bool(haystack) and _normalize(value).casefold() in haystack.casefold()
+
+
 def verify_keys(
     rows: list[dict[str, str]], page_texts: list[str]
 ) -> tuple[list[KeyIssue], int]:
@@ -55,7 +74,7 @@ def verify_keys(
     text yields no issues and a zero count, so callers can tell "clean" apart
     from "could not check".
     """
-    haystack = _normalize(" \n ".join(page_texts))
+    haystack = text_haystack(page_texts)
     if not haystack.strip():
         return [], 0
 

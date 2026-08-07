@@ -41,7 +41,6 @@ def make_config(**overrides) -> Config:
             overrides.pop("max_retries", 0),
         ),
         primary_model=LUNA,
-        consensus_models=(LUNA, GEMINI),
         chunking=ChunkingConfig(50, 2, 5, 12, 20 * 1024 * 1024, 3),
         model_overrides=overrides.pop("model_overrides", {}),
         pricing={LUNA: Pricing(0.2, 0.8), GEMINI: Pricing(0.2, 0.8)},
@@ -51,8 +50,8 @@ def make_config(**overrides) -> Config:
         openai_api_key=overrides.pop("openai_api_key", "sk-test"),
         gemini_api_key=overrides.pop("gemini_api_key", "gem-test"),
         provider_max_request_bytes=overrides.pop("provider_max_request_bytes", {}),
-        adjudicate=overrides.pop("adjudicate", True),
-        adjudicator=overrides.pop("adjudicator", ""),
+        qa_enabled=overrides.pop("qa_enabled", True),
+        qa_reviewer=overrides.pop("qa_reviewer", ""),
     )
 
 
@@ -330,20 +329,20 @@ def test_one_fallback_makes_the_whole_run_mixed():
     assert config.route_class([LUNA, GEMINI]) == "mixed"
 
 
-def test_the_adjudicator_counts_toward_the_route_class():
-    """It bills real calls, and it can be a pin the extracting models are not."""
+def test_the_qa_reviewer_counts_toward_the_route_class():
+    """It bills real calls, and it can be a pin the extracting model is not."""
     config = make_config(
         default_provider="auto",
         model_overrides={LUNA: {"provider": "superapp"}},
-        adjudicator=LUNA,
+        qa_reviewer=LUNA,
     )
-    assert config.route_class([GEMINI]) == "mixed", "adjudication is on by default"
+    assert config.route_class([GEMINI]) == "mixed", "qa is on by default"
 
     off = make_config(
         default_provider="auto",
         model_overrides={LUNA: {"provider": "superapp"}},
-        adjudicator=LUNA,
-        adjudicate=False,
+        qa_reviewer=LUNA,
+        qa_enabled=False,
     )
     assert off.route_class([GEMINI]) == "direct"
 
@@ -355,7 +354,8 @@ api:
   base_url: https://superapp.invalid/api/v1
 models:
   primary: {LUNA}
-  consensus: [{LUNA}, {GEMINI}]
+qa:
+  model: {GEMINI}
 providers:
   default: auto
 """

@@ -13,7 +13,7 @@
 - **One call per chunk, all 25 columns at once.** Extracting column groups in separate calls is what makes rows diverge; this removes the divergence at its source rather than repairing it afterwards.
 - **Profile first, chunk only when needed.** Documents under the page ceiling go through in a single shot. Chunking engages for the long tail, with page overlap and a layout hand-off so continuation pages know what the columns are.
 - **A compact output contract.** Column names are declared once and rows travel as positional arrays, which is what keeps long tables inside the output-token budget.
-- **Two models, cross-provider, then reconcile.** Every disagreement is flagged, and by default a third opinion settles it against the document's own text — a selection between the two candidates, never a rewrite.
+- **One extraction, then a QA review of it.** The table is read once and audited once, with the source pages re-attached for the audit. A correction reaches the table only when the document's text layer carries the value it proposes, so a reviewer that can invent a value cannot put one in the deliverable.
 - **Each model calls its own vendor directly, with SuperApp as the fallback.** A direct call reaches the model it names and reports real token counts; through the agent loop neither holds. Routing is per model, so a missing key downgrades one pin rather than failing the run.
 - **Accuracy is measured against golden data, and so are the rules used to measure it.** Every equivalence the scorer honours can be switched off, so each one carries a number rather than an assertion.
 - **Cost is measured, not estimated.** Every API call lands in a telemetry ledger with tokens and dollars, so model choices can be compared on evidence.
@@ -155,27 +155,30 @@ No table detector and no form recognizer are used anywhere in the pipeline.
 - Normalization is deferred to `cleaning.py`, which runs after the merge and is the single owner of formatting: dates to `MM/DD/YYYY`, money to plain decimals, empty to `N/A`.
 - Parent-child fill: where `layout.json` reports Policy Number as a block-level value, it propagates down to the claims beneath it.
 
-### Stage 4 — Consensus and adjudication (`consensus.py`, `adjudicate.py`)
+### Stage 4 — QA review (`qa.py`)
 
-Stages 1–3 run independently under both models in `models.consensus`, concurrently.
+Stages 1–3 run once, under `models.primary` — **`openai/gpt-5.6-luna` at `max` effort**, called directly. There is no second extraction pass.
 
-Default pair: **`openai/gpt-5.6-luna` + `gemini/gemini-3.5-flash-lite`**, one per vendor, each called directly. Cross-provider is deliberate — the routing registry groups sol, terra and luna into one `gpt-5.6` family because they share base weights, so a same-family pair correlates its errors. A GPT-only pair is available in config for endpoints that permit only OpenAI models, and is the weaker configuration.
+What replaced it is a **review of the table that already exists**, on by default (`qa.enabled`, or `--no-qa`). One call per chunk carries:
 
-`gemini-3.5-flash-lite` is pinned to `provider: gemini` rather than left on `auto`: SuperApp rejects it with `400 Unsupported model`, so an explicit pin makes a missing `GEMINI_API_KEY` fail loudly instead of falling back to a route that cannot serve it.
+- that chunk's pages, re-attached — the reviewer looks at the document, not at a transcript of it;
+- the rows extracted from those pages, as the same positional arrays the extraction returned;
+- every column's definition from `schema.json`, so "wrong column" is a finding and not just "wrong value";
+- a statement of what `cleaning.py` already did, without which every rendered date and stripped currency symbol comes back as a false finding.
 
-`consensus.compare` diffs the two tables on the row key: rows unique to A, rows unique to B, per-cell mismatches. Per-column agreement rate is a headline metric — though agreement is not accuracy, and two models can agree and both be wrong.
+Rows are matched to chunks positionally, by walking the pre-merge rows in merge order. Keying that lookup instead would miss exactly the rows whose Policy Number was filled in from a block header after the merge. A chunk whose rows exceed the 64 KiB text budget is reviewed in parts rather than truncated, because a silently unreviewed row would read as a clean one.
 
-**Adjudication** then settles each conflicting cell, and is **on by default** (`consensus.adjudicate`, or `--no-adjudicate` to keep the primary model's value everywhere). One call per conflicting cell carries:
+The reviewer returns two things: cells it believes are wrong, each with the value it says the document prints, and claims it found on the page but not in the table.
 
-- the column's definition from `schema.json`;
-- both candidate values, each labelled with the model that read it;
-- roughly 900 characters of the document's text layer on either side of that claim, located by row key and tolerant of the line wrapping a PDF introduces.
+**The guard.** Adjudication could not invent a value because it could only pick between two candidates. A reviewer has no such limit, so the constraint moves to the point of application: a proposed correction is written into the table **only when that value occurs in the document's own text layer**, whitespace and case ignored. Anything unconfirmed is logged as `qa_unverified` and the extracted value stands. The single carve-out is a correction to `N/A` — clearing a cell removes a value rather than introducing one, so it cannot be a hallucination, and an invented figure is what the stage exists to catch.
 
-The adjudicator may answer only **`A`, `B` or `neither`**. It cannot supply a value of its own, so a tie-break can never introduce a reading no model made — anything other than a clean `A`/`B` is treated as declining, and the primary model's value stands. Calls carry **no attachment**, which is what keeps a per-cell call affordable.
+Applied values go through `cleaning.clean_value` before they are written, so a correction copied off the page as `$1,200.00` lands in the table as `1200` like every other amount.
 
-Every decision lands in the Issues sheet: settled ones as `adjudicated` at info severity, refusals as `adjudication_declined` at warning — the refusals are the cells a human should read.
+Rows reported missing are **flagged, never added** — reconstructing a full 25-column row from a key is a re-extraction, which is the thing this stage is not.
 
-> ⚠️ With `consensus.adjudicator` empty the primary model breaks its own ties, and measurement shows the bias is real but uneven: **119 conflicts settled, 14 conceded** to the second model overall — yet **0 of 91** on the one document where the second model scored higher. Point `adjudicator` at a neutral third pin, or turn the stage off. See [CHALLENGES.md](CHALLENGES.md) #20.
+Findings land in the Issues sheet: `qa_corrected` at info as an audit trail, `qa_unverified` and `qa_row_missing` at warning — those are the cells a human should read.
+
+> ⚠️ The guard is only as good as the text layer. A scanned document has none, so on exactly the files where a second look at the page is worth most, every finding is reported and none is applied. See [CHALLENGES.md](CHALLENGES.md) #22.
 
 ### Stage 5 — Output (`report.py`)
 
@@ -189,7 +192,7 @@ Every decision lands in the Issues sheet: settled ones as `adjudicated` at info 
 | `Accuracy` / `Accuracy Mismatches` | Per-model and per-column scores against golden, plus every disagreeing cell |
 | `Telemetry` | This run's calls and costs |
 
-**Output is grouped by route.** Runs land in `out/<route>_calls/`, where `<route>` is `direct`, `superapp`, or `mixed` when a run spans both. `route_class` derives it from every model's resolved provider, plus the adjudicator's when adjudication is on, since that stage bills real calls and can be a different pin. A single SuperApp call makes the whole run `mixed`: its totals then carry agent-loop tokens a direct call never pays for, so it belongs with neither population rather than being filed under whichever route dominated.
+**Output is grouped by route.** Runs land in `out/<route>_calls/`, where `<route>` is `direct`, `superapp`, or `mixed` when a run spans both. `route_class` derives it from every model's resolved provider, plus the reviewer's when QA is on, since that stage bills real calls and can be a different pin. A single SuperApp call makes the whole run `mixed`: its totals then carry agent-loop tokens a direct call never pays for, so it belongs with neither population rather than being filed under whichever route dominated.
 
 `out/<route>_calls/telemetry.xlsx` accumulates that route's runs — `Runs`, `Calls`, `Accuracy`, `Accuracy By Column` — so model and configuration experiments are directly comparable within a route, and runs measured a different way stay out of the file. Every row carries a `batch_id` shared by all documents of one `extract` invocation, which is how one experiment is pulled back out of the pile; every call row carries the `provider` that served it. Comparing the routes themselves means comparing two ledgers.
 
@@ -233,7 +236,7 @@ One record per API call: `run_id`, document, stage, model, provider, chunk pages
 
 Cost is computed locally from the `pricing` block in `config.yaml`. The API returns token counts, not dollars, so prices are operator-maintained configuration. `provider` records which route served the call: one pin is reachable through more than one, and the direct vendor rate is not what SuperApp bills, so a mixed run's totals are re-priceable from the ledger.
 
-Run-level summary: total cost, total tokens, wall clock, pages, rows extracted, conflict count, per-column agreement rate.
+Run-level summary: total cost, total tokens, wall clock, pages, rows extracted, corrections the review proposed, and how many of them the document confirmed.
 
 ## Configuration
 
@@ -253,20 +256,15 @@ providers:
   gemini:   { max_request_bytes: 20971520, temperature: 0.0 }
 
 models:
-  primary:   openai/gpt-5.6-luna
-  consensus:
-    - openai/gpt-5.6-luna                # "Luna"
-    - gemini/gemini-3.5-flash-lite       # direct Gemini only — not a SuperApp pin
-  # GPT-only alternative — same family, weaker consensus:
-  #   [openai/gpt-5.6-luna, openai/gpt-5.6-terra]
+  primary:   openai/gpt-5.6-luna         # "Luna" — the one extraction pass
   overrides:
     openai/gpt-5.6-luna:           { max_pages_per_chunk: 50, effort: max }   # "Luna Max"
     openai/gpt-5.6-terra:          { max_pages_per_chunk: 50 }
     gemini/gemini-3.5-flash-lite:  { max_pages_per_chunk: 100, provider: gemini }
 
-consensus:
-  adjudicate: true             # settle conflicting cells with a third opinion
-  adjudicator: ""              # empty means the primary model breaks its own ties
+qa:
+  enabled: true                # review the extracted table against the pages
+  model: ""                    # empty means the extracting model reviews
 
 chunking:
   max_pages_per_chunk: 50      # GPT-5.4 ceiling; raised per model above
@@ -291,9 +289,8 @@ Every value is overridable by CLI flag. Nothing branches on a model name outside
 | --- | --- |
 | `--provider {auto,superapp,openai,gemini}` | Forces one route across every model, ignoring `models.overrides`. This is how a direct-versus-SuperApp A/B on the same document is run |
 | `--effort LEVEL` | Forces one reasoning effort across every model, outranking per-model overrides |
-| `--model`, `--consensus` | Replace the primary model or the pair |
-| `--single-model` | Primary model only, skipping consensus — roughly half the cost |
-| `--no-adjudicate` | Keep the primary's value on every conflict instead of asking a third opinion |
+| `--model`, `--qa-model` | Replace the extracting model, or the one that reviews it |
+| `--no-qa` | Ship the extracted table unreviewed |
 | `--out DIR` | Output root; runs land in `<out>/<route>_calls/` |
 
 ## Module layout
@@ -305,7 +302,7 @@ Every value is overridable by CLI flag. Nothing branches on a model name outside
 | `lossrun/superapp_client.py` | httpx client: create (always background, always `Idempotency-Key`), poll with backoff, honor `Retry-After`, surface `error.code`. Asserts the 64 KiB / 25 MiB / 20-attachment limits before sending |
 | `lossrun/openai_client.py` | The same Responses cycle against `api.openai.com`, inherited from the SuperApp client — only the base URL, the bearer credential and the wire model id differ |
 | `lossrun/gemini_client.py` | Direct `generateContent` against Google's API. Synchronous, so nothing to poll, and it can set `temperature: 0` where the Responses subset cannot |
-| `lossrun/pipeline.py` | Orchestrates one document end to end: ingest → profile → extract → merge → consensus → adjudicate → score → write. Owns the route grouping of the output |
+| `lossrun/pipeline.py` | Orchestrates one document end to end: ingest → profile → extract → merge → qa → verify → score → write. Owns the route grouping of the output |
 | `lossrun/schema_loader.py` | Resolves the `Table` UDF join in `schema.json` into the 25-column contract and its prompts |
 | `lossrun/prompts.py` | Prompt assembly, and `COLUMN_HINTS` — the four-column delta recommended for `schema.json` |
 | `lossrun/ingest.py` | eml/msg/pdf/office normalization |
@@ -315,8 +312,7 @@ Every value is overridable by CLI flag. Nothing branches on a model name outside
 | `lossrun/jsonparse.py` | Defensive parsing and repair of truncated JSON, since `text.format` is ignored |
 | `lossrun/merge.py` | Row-key merge and normalization |
 | `lossrun/verify.py` | Checks each row key appears verbatim in the text layer — the hallucination signature |
-| `lossrun/consensus.py` | Two-model diff and conflict classification |
-| `lossrun/adjudicate.py` | Third-opinion tie-break on conflicting cells; selection only, never a rewrite |
+| `lossrun/qa.py` | Reviews the extracted table against the pages it came from, and applies only the corrections the text layer confirms |
 | `lossrun/cleaning.py` | Renders dates and money into golden's representation, once, after the merge |
 | `lossrun/accuracy.py` | Scoring against golden, and the `ScoringPolicy` flags that make each assumption measurable |
 | `lossrun/rescore.py` | Rebuilds a finished run's tables from its own workbook, so scoring rules can change without re-running the API |

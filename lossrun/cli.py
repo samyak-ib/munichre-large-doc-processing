@@ -39,15 +39,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     extract.add_argument("--model", help="override the primary model")
     extract.add_argument(
-        "--consensus",
-        nargs="+",
+        "--qa-model",
         metavar="MODEL",
-        help="override the consensus model list",
-    )
-    extract.add_argument(
-        "--single-model",
-        action="store_true",
-        help="run only the primary model, skipping consensus",
+        help="model that reviews the extracted table (default: the primary model)",
     )
     extract.add_argument("--base-url", help="override the API base URL")
     extract.add_argument(
@@ -76,12 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
         "document (pass an empty string to skip it)",
     )
     extract.add_argument(
-        "--no-adjudicate",
-        dest="adjudicate",
+        "--no-qa",
+        dest="qa",
         action="store_false",
         default=None,
-        help="keep the primary model's value on every conflict instead of "
-        "asking a third opinion to break it",
+        help="ship the extracted table unreviewed, skipping the QA pass",
     )
 
     check = sub.add_parser("check", help="verify credentials and API reachability")
@@ -278,31 +271,28 @@ def _cmd_extract(args: argparse.Namespace) -> int:
     config = load_config(
         args.config,
         primary_model=args.model,
-        consensus_models=args.consensus,
         base_url=args.base_url,
         extract_effort=args.effort,
-        adjudicate=args.adjudicate,
+        qa=args.qa,
+        qa_model=args.qa_model,
         provider=args.provider,
     )
     paths = _expand_inputs(args.inputs)
     if not paths:
         raise ValueError("no input files found")
 
-    models = [config.primary_model] if args.single_model else list(config.consensus_models)
-    print(f"models: {', '.join(dict.fromkeys(models))}")
-    efforts = ", ".join(
-        f"{m.rsplit('/', 1)[-1]}={config.extract_effort_for(m) or 'default'}"
-        for m in dict.fromkeys(models)
+    model = config.primary_model
+    print(f"model: {model}")
+    print(
+        f"effort: layout={config.reasoning.layout or 'default'}  "
+        f"extract={config.extract_effort_for(model) or 'default'}"
     )
-    print(f"effort: layout={config.reasoning.layout or 'default'}  extract[{efforts}]")
     routes = ", ".join(
-        f"{m.rsplit('/', 1)[-1]}->{config.provider_for(m)}" for m in dict.fromkeys(models)
+        f"{m.rsplit('/', 1)[-1]}->{config.provider_for(m)}" for m in config.routed_models
     )
     print(f"routing: {routes}")
-    print(f"output: {args.out / (config.route_class(models) + '_calls')}/")
-    print(
-        f"adjudication: {'on, ' + config.adjudicator_model if config.adjudicate else 'off'}"
-    )
+    print(f"output: {args.out / (config.route_class([model]) + '_calls')}/")
+    print(f"qa: {'on, ' + config.qa_model if config.qa_enabled else 'off'}")
 
     # One id for this invocation, so a multi-document run can be pulled back out
     # of the cumulative ledger as a single experiment.
@@ -323,7 +313,6 @@ def _cmd_extract(args: argparse.Namespace) -> int:
                 config=config,
                 out_dir=args.out,
                 schema_path=args.schema,
-                single_model=args.single_model,
                 golden_path=args.golden,
                 batch_id=batch_id,
                 log=print,
@@ -333,11 +322,10 @@ def _cmd_extract(args: argparse.Namespace) -> int:
             print(f"  failed: {exc}", file=sys.stderr)
             continue
 
-        agreement = f"{outcome.agreement:.1f}%" if outcome.agreement is not None else "n/a"
         print(
             f"  done: {outcome.rows} rows  route={outcome.route}  chunks={outcome.chunks}  "
-            f"conflicts={outcome.conflicts}  unverified_keys={outcome.unverified}  "
-            f"agreement={agreement}  cost=${outcome.cost_usd:.4f}"
+            f"qa_findings={outcome.qa_findings}  qa_applied={outcome.qa_applied}  "
+            f"unverified_keys={outcome.unverified}  cost=${outcome.cost_usd:.4f}"
         )
         if outcome.accuracy:
             a = outcome.accuracy

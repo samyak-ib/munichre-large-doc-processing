@@ -61,7 +61,6 @@ class ReasoningConfig:
 class Config:
     api: ApiConfig
     primary_model: str
-    consensus_models: tuple[str, ...]
     chunking: ChunkingConfig
     model_overrides: dict[str, dict[str, Any]]
     pricing: dict[str, Pricing]
@@ -80,29 +79,29 @@ class Config:
     # A --effort flag for this run: outranks per-model overrides and the
     # config default. None means no flag was given; "" means "send nothing".
     forced_extract_effort: str | None = None
-    # Break cell conflicts with a third opinion instead of always keeping the
-    # primary model's value. One text-only call per conflicting cell.
-    adjudicate: bool = True
-    # Which model breaks the ties. Empty means the primary, which biases the
-    # tie-break toward its own reading — a neutral third pin is preferable.
-    adjudicator: str = ""
+    # Review the extracted table against the source pages instead of extracting
+    # it a second time with another model. One call per chunk.
+    qa_enabled: bool = True
+    # Which model reviews. Empty means the primary, which is the shipped setup:
+    # the reviewer is checking a transcription against the page rather than
+    # arbitrating between two readings, so it is not judging its own tie-break.
+    qa_reviewer: str = ""
 
     @property
-    def adjudicator_model(self) -> str:
-        return self.adjudicator or self.primary_model
+    def qa_model(self) -> str:
+        return self.qa_reviewer or self.primary_model
 
     @property
     def routed_models(self) -> tuple[str, ...]:
         """Every model a run may call, deduplicated in configuration order.
 
-        The adjudicator is included because a conflicting cell reaches it even
-        when it is not one of the extracting models.
+        The reviewer is included because it bills real calls even when it is not
+        the extracting model.
         """
-        return tuple(
-            dict.fromkeys(
-                (self.primary_model, *self.consensus_models, self.adjudicator_model)
-            )
-        )
+        pins = [self.primary_model]
+        if self.qa_enabled:
+            pins.append(self.qa_model)
+        return tuple(dict.fromkeys(pins))
 
     def route_class(self, models: list[str]) -> str:
         """Whether this run's calls all go direct, all through SuperApp, or both.
@@ -113,12 +112,12 @@ class Config:
         run — `mixed` keeps it out of both populations instead of filing it under
         whichever route happened to dominate.
 
-        The adjudicator counts whenever adjudication is on: it bills real calls,
-        and it can be a different pin from the extracting models.
+        The reviewer counts whenever QA is on: it bills real calls, and it can be
+        a different pin from the extracting model.
         """
         pins = list(models)
-        if self.adjudicate:
-            pins.append(self.adjudicator_model)
+        if self.qa_enabled:
+            pins.append(self.qa_model)
         providers = {self.provider_for(m) for m in pins}
         if providers == {"superapp"}:
             return "superapp"
@@ -283,10 +282,10 @@ def load_config(
     path: Path | None = None,
     *,
     primary_model: str | None = None,
-    consensus_models: list[str] | None = None,
     base_url: str | None = None,
     extract_effort: str | None = None,
-    adjudicate: bool | None = None,
+    qa: bool | None = None,
+    qa_model: str | None = None,
     provider: str | None = None,
     require_token: bool = True,
 ) -> Config:
@@ -322,12 +321,10 @@ def load_config(
     primary = primary_model or models_raw.get("primary")
     if not primary:
         raise ValueError("models.primary is required")
-    consensus = tuple(consensus_models or models_raw.get("consensus") or [primary])
 
-    consensus_raw = raw.get("consensus") or {}
-    adjudicate_on = (
-        bool(consensus_raw.get("adjudicate", True)) if adjudicate is None else adjudicate
-    )
+    qa_raw = raw.get("qa") or {}
+    qa_on = bool(qa_raw.get("enabled", True)) if qa is None else qa
+    reviewer = (qa_model if qa_model is not None else qa_raw.get("model", "")) or ""
 
     pricing = {
         name: Pricing(input=float(v.get("input", 0.0)), output=float(v.get("output", 0.0)))
@@ -370,7 +367,6 @@ def load_config(
     config = Config(
         api=api,
         primary_model=primary,
-        consensus_models=consensus,
         chunking=chunking,
         model_overrides=overrides,
         pricing=pricing,
@@ -385,8 +381,8 @@ def load_config(
         gemini_temperature=float(gemini_raw.get("temperature", 0.0)),
         provider_max_request_bytes=provider_max_request_bytes,
         thinking_budgets=thinking_budgets,
-        adjudicate=adjudicate_on,
-        adjudicator=str(consensus_raw.get("adjudicator", "") or "").strip(),
+        qa_enabled=qa_on,
+        qa_reviewer=str(reviewer).strip(),
     )
 
     # Resolving the routes is what says whether a bearer token is needed at all:

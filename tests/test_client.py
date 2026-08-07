@@ -28,7 +28,6 @@ def make_config(**api_overrides) -> Config:
     return Config(
         api=api,
         primary_model="m",
-        consensus_models=("m",),
         chunking=ChunkingConfig(50, 2, 5, 12, 20 * 1024 * 1024, 3),
         model_overrides={},
         pricing={"m": Pricing(0.2, 0.8)},

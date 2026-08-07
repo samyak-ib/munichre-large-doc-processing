@@ -19,15 +19,9 @@ api:
   max_retries: 4
 
 models:
-  primary: openai/gpt-5.6-luna
-  consensus:
-    - openai/gpt-5.6-luna            # "Luna"
-    - gemini/gemini-3.5-flash-lite   # Anant's pick — direct Gemini only (not a SuperApp pin)
-  # GPT-only alternative for an endpoint that permits only OpenAI models.
-  # Same gpt-5.6 family, so the two correlate their errors — weaker consensus.
-  #   consensus: [openai/gpt-5.6-luna, openai/gpt-5.6-terra]
-  # Prior stand-in when only SuperApp was available:
-  #   consensus: [openai/gpt-5.6-luna, gemini/gemini-3.6-flash]
+  # One model extracts; the QA stage below reviews what it produced. There is no
+  # second extraction pass — see docs/APPROACH.md stage 4.
+  primary: openai/gpt-5.6-luna       # "Luna"
   overrides:
     openai/gpt-5.6-luna:
       max_pages_per_chunk: 50
@@ -52,16 +46,23 @@ models:
       # api_model: gemini-3.6-flash   # id the vendor expects, if it differs
       # No effort override: low/medium/high only, and its default works.
 
-consensus:
-  # When the two models disagree on a cell, ask a third opinion which of the two
-  # candidates the document supports, instead of always keeping the primary's
-  # value. One text-only call per conflicting cell — no attachment, so it is far
-  # cheaper than an extraction call. The adjudicator may only pick A, B or
-  # neither; it can never supply a value of its own.
-  adjudicate: true
-  # Which model settles the ties. Empty means the primary model, which biases
-  # the tie-break toward its own reading — a neutral third pin is preferable.
-  adjudicator: ""
+qa:
+  # A reviewing pass over the table that was just extracted, in place of a second
+  # extraction. One call per chunk, carrying that chunk's pages again plus the
+  # rows read from them; the reviewer reports only the cells it believes are
+  # wrong, and what the document prints instead.
+  #
+  # A correction is written into the final table only when the value it proposes
+  # occurs in the document's own text layer, so a QA hallucination can never
+  # reach the deliverable. Anything unconfirmed is reported in the Issues sheet
+  # and the extracted value stands. The consequence is that a scanned document
+  # with no text layer gets a review it cannot act on — every finding is
+  # reported, none applied. See docs/CHALLENGES.md #21.
+  enabled: true
+  # Which model reviews. Empty means the primary model, which is the shipped
+  # setup: this stage checks a transcription against the page rather than
+  # arbitrating between two readings, so it is not judging its own tie-break.
+  model: ""
 
 providers:
   # Where each model's calls go.
