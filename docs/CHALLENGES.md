@@ -274,3 +274,35 @@ The stage still costs its calls there. What it buys is a warning list rather tha
 **What the script does:** logs the situation explicitly during the run and writes a `qa_unverifiable` row into the Issues sheet, so a clean-looking table is never mistaken for a reviewed one. Each individual finding is also reported as `qa_unverified`.
 
 **Ponder:** the natural fix is a text layer — running OCR over the scanned pages purely to build the haystack the guard checks against, never to extract from. That is a local `pymupdf`/Tesseract step, not a form recognizer, so it does not reopen the cost objection from the call. Worth measuring against the alternative of trusting the review outright on scanned documents only.
+
+### 24. Telemetry cannot see time spent inside the poll loop
+
+A run of the extended sample set turned up a document that took **91.6 minutes
+of wall clock containing 9.3 minutes of recorded API calls** — four calls, near
+zero CPU, and 82 minutes nobody can account for.
+
+| Stage | Attempt | Status | Latency |
+| --- | --- | --- | --- |
+| layout | 1 | completed | 22.5s |
+| extract | 1 | completed | 150.2s |
+| qa | 1 | **error** — `HTTP 404: Response with id 'resp_…' not found` | 104.1s |
+| qa | 2 | completed | 279.0s |
+
+The gap is **sporadic, not structural**: across seven documents measured the same
+way, five show a gap under a minute and one shows 12 minutes. The same 36-page,
+127-row document that ran in 5.2 minutes end to end had no gap at all.
+
+**What is certainly true** is that the ledger cannot see this time. `_poll` has
+two paths that retry without recording anything — `except httpx.HTTPError:
+continue` and `if resp.status_code == 503: continue` — so every failed GET inside
+a poll loop is invisible. A call row reports one latency for an attempt no matter
+how many silent retries happened inside it. The `Idempotency-Key` gap (#21) has
+the same shape: what the ledger does not record, nobody can bill or debug.
+
+The 404 is worth noting on its own — the API losing a background response it had
+just created, which the client correctly treats as a failed attempt and retries.
+
+**Fix:** record a row per poll failure, or at minimum count them on the call row
+next to `poll_count`. Until then, `wall_clock_s` minus the sum of `latency_s` is
+the only signal that a run spent time somewhere it cannot explain, and it is
+worth checking after any batch that felt slow.
