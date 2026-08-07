@@ -1,0 +1,225 @@
+# Challenges and Things to Ponder
+
+Known constraints, unanswered questions, and caveats for the loss-run extractor. Each entry states the constraint, what the script does about it, and the question left open — so anyone picking an item up does not have to re-derive it.
+
+Companion to [APPROACH.md](APPROACH.md).
+
+## Bottom Line
+
+- **Reasoning effort is now settable, but it is not the variable that matters** — the same settings produced both the best and worst measured runs.
+- **The pair recommended on the call now runs**, because calling Google directly bypasses the SuperApp catalog that rejects Flash-Lite. Measured, it trails Luna on row recall (84.8% against 96.7%) and costs more per token, so the cost argument behind it does not hold.
+- **Luna is unstable on stacked two-line headers**, intermittently returning the claim adjuster as the claimant. Gemini is not.
+- **The verbatim key check proves a value was copied from the document, not that it came from the right column.** Cross-model disagreement is what catches a misassigned value.
+- **Consensus measures agreement, not accuracy.** Golden data now answers the accuracy question directly, and adjudication turns each disagreement into a decision rather than a flag.
+- **The largest remaining errors were structural, not transcription.** Three columns returned `N/A` because the value was somewhere the extraction pass never looked, and one read the wrong column entirely. Prompt guidance addresses all four — and that guidance was written from five documents, which bounds how far it generalises.
+- **The scoring rules are themselves assumptions**, each measurable and each reported with what it is worth.
+- **Adjudication as configured is a rubber stamp.** The primary model settled 93 conflicts against the second model and chose itself in every one — on a document where the second model scored higher. A neutral third pin is needed before the stage earns its cost.
+- **The SuperApp endpoint times out on concurrent uploads**, well below its documented body cap. Working around it costs wall clock, and it is the reason request-size ceilings are set per provider rather than per model.
+- **Cost figures carry two known error sources**: operator-maintained prices, and one price per pin serving two routes that do not charge the same.
+- **The measurement route matters.** Reaching a model through SuperApp adds agent-loop tokens, reports no usage at all for Gemini, and can silently substitute a different model. Calling the vendor directly avoids all three, which is why it is the default and SuperApp is the fallback.
+- **Deployability at Munich remains open** and is deliberately isolated to configuration.
+
+## Platform constraints we work around
+
+### 1. Reasoning effort is now controllable, and it is not the variable that matters
+
+The Responses API now accepts `reasoning.effort` (`low` / `medium` / `high`, plus OpenAI-only `xhigh` / `max`), so the script sets it per stage and records it per call.
+
+Three runs over the same 10-page loss run, same models:
+
+| Run | `extract` effort | Rows agreed across models | Cell agreement | Luna's claimant column |
+| --- | --- | --- | --- | --- |
+| A | `default` (Luna runs HIGH) | 51 / 51 | 94.1% | correct |
+| B | `low` | 9 / 51 | 80.0% | **adjuster** |
+| C | `default` | 0 / 51 | 0.0% | **adjuster** |
+
+Runs A and C used identical settings and produced the best and worst results in the set. **Effort is not the determining variable — run-to-run instability is.**
+
+The instability is specific and reproducible in kind: the document stacks two labels per column, `Coverage Type / Claim Adjuster` above `Claimant Name / Claim Description`. Flattened into a text stream, the adjuster's name appears *before* the claimant's on every row. Luna sometimes takes the first human-looking name it meets and returns the adjuster — repeating one adjuster across several unrelated claims. Gemini got it right in all three runs.
+
+Layout discovery is not the culprit: it correctly reported `Claimant Name -> "Claimant Name / Claim Description"` in every run, including the failing ones. The layout is right and extraction ignores it.
+
+**Ponder:** the fix belongs in the extraction prompt, not in the effort setting — an explicit "do not confuse the claimant with the adjuster" clause derived from the stacked headers that layout discovery already detects. Until then, Luna cannot be trusted as the primary model on stacked-header layouts, which is a strong argument for keeping the cross-provider pair.
+
+### 1a. The verbatim key check cannot catch a misassigned value
+
+Every one of those runs scored **0 keys failing the verbatim check**, including the ones where most claimant names were wrong. The adjuster's name is genuinely present in the document, one column over. The check proves a value was *copied* from the document, never that it came from the *right place*.
+
+Cross-model disagreement is the only thing that caught this. A single-model run would have reported clean, with a plausible-looking table.
+
+### 2. The exact model pair recommended on the call is now reachable, by going around SuperApp
+
+Both gaps closed, for different reasons:
+
+- **"Luna Max"** means Luna at maximum reasoning effort. `max` is accepted (OpenAI-only) and is the configured default for the primary model. The measured effect of *lowering* effort was negative; raising it remains untested against golden, so the setting is a recommendation carried out, not a validated one.
+- **`gemini/gemini-3.5-flash-lite`** is the cheapest model in the routing registry and the one the cost argument on the call rested on. It is still not a selectable SuperApp catalog pin — requesting it there returns `400 Unsupported model`, since it exists internally as a fallback and grounding model rather than a user selection. Calling Google directly bypasses the catalog entirely and reaches it.
+
+**What the script does:** defaults to `openai/gpt-5.6-luna` + `gemini/gemini-3.5-flash-lite`, and pins the latter to `provider: gemini` rather than leaving it on `auto`. The explicit pin matters: on `auto` a missing `GEMINI_API_KEY` would fall the model back to SuperApp, which cannot serve it, turning a missing credential into a confusing `400` instead of a message naming the key.
+
+**Consequence:** the recommended pair is no longer a stand-in, but its accuracy is now measured. Across the five golden documents Flash-Lite scored 81.8% of cells and 84.8% row recall, against Luna's 83.6% and 96.7% — competitive on cells, materially worse at finding rows. At $0.30/$2.50 per 1M tokens against Luna's $0.20/$0.80 it is also not the cheaper pin, so the cost argument that motivated it does not survive contact with the published prices.
+
+### 3. Same-family models make weak consensus partners
+
+The routing registry groups `gpt-5.6-sol`, `-terra` and `-luna` under a single `gpt-5.6` family because they share base weights, and uses that grouping to reason about diversity. A GPT-only consensus pair therefore correlates its errors: when two models share weights, agreement is weaker evidence of correctness.
+
+**What the script does:** defaults to a cross-provider pair. A GPT-only pair stays available in config for endpoints that permit only OpenAI models, documented as the weaker configuration.
+
+**Ponder:** the GPT-only constraint and the consensus-quality argument point in opposite directions. If Munich's endpoint is the deployment target, the weaker pairing may be the only option — in which case the verbatim text-layer check carries proportionally more weight.
+
+### 4. No structured output
+
+`text.format` and `json_schema` are ignored by the shipped handler, so JSON conformance is a prompt request rather than a guarantee. Every response needs defensive parsing, fenced-block extraction, and repair of truncated arrays.
+
+**Ponder:** the design doc describes a post-v1 "schema-enforced final turn" that would validate the answer server-side and repair-retry on mismatch. That would remove this entirely — worth tracking.
+
+### 5. Truncation resume cannot use response chaining
+
+`previous_response_id` rejects any ancestor carrying an attachment. Every chunk call carries a chunk PDF, so a cut-off chunk cannot be continued through a chained follow-up — the resume must be a fresh call that re-attaches the same pages, paying the input tokens a second time.
+
+**Ponder:** cheaper resume paths. Smaller page windows reduce the chance of truncation but multiply fixed per-call overhead. A text-only resume — send the extracted page text rather than the PDF — would be far cheaper but loses the layout signal that makes the model good at tables in the first place.
+
+### 6. The 64 KiB combined text budget bounds seam context
+
+`input` plus `instructions` must stay under 64 KiB. The 25 column specs consume 15.7 KiB, leaving room for the layout and a bounded set of overlap anchors — row keys only. Richer seam context, such as the full previous rows, does not fit.
+
+### 7. Create is rate-limited to 60 per minute per principal
+
+Shared across both consensus models, so effective throughput is roughly one 50-page chunk per second for both models combined. Batch runs across many documents need pacing; the telemetry ledger shows when the limit binds.
+
+## Accuracy questions we cannot answer yet
+
+### 8. Consensus measures agreement, not accuracy
+
+Two cheap models can agree and both be wrong — especially on a systematic error, such as reading the same ambiguous column header the same wrong way. Whether this approach beats AIHub's 20% needs the golden dataset.
+
+**What the script does:** reports agreement rate per column and labels it as agreement. It is never presented as accuracy.
+
+### 9. Scanned pages defeat the verbatim key check
+
+The text-layer comparison that catches hallucinated claim numbers needs a text layer. A scanned loss run has none, and those documents lose the strongest defense against the primary failure mode.
+
+**This is not the edge case it was assumed to be.** Of the sample loss runs tested, `Loss Run_Report.pdf` reports **0% text-layer coverage** — every page is an image. On those documents the run reports `unverified_keys=0` because nothing was checked, not because nothing was wrong. Read that number together with the "no text layer" warning in the Issues sheet, never alone.
+
+Scanned pages are also far more expensive: roughly 9k input tokens per page versus about 5k for a text-layer PDF of the same size.
+
+**Ponder:** this sits in direct tension with the "no form recognizer, no table detector" guidance. A cheap OCR pass used *only for verification* — never for extraction, never shown to the extraction model — may thread that needle: it would not reintroduce the pixel-based table interpretation that guidance was aimed at.
+
+### 10. The row key includes the least stable field
+
+Claimant Name is simultaneously part of the merge key and the field most prone to autocorrection, and the schema legitimately returns `N/A` for it when no claimant column exists. A wrong or missing name silently splits one claim into two rows, or collapses two claims into one.
+
+**Ponder:** a fuzzy secondary match on Claim Number alone, surfaced in Issues rather than applied automatically. Automatic fuzzy merging on a hallucination-prone key risks manufacturing rows that were never in the document.
+
+### 11. Records split across a page boundary
+
+Raised on the call as the reason chunking is risky: a claim whose row spans two pages loses context when the split lands mid-record. Two pages of overlap mitigates it, but a row split across a *chunk* seam remains the likeliest source of a duplicate or a dropped row.
+
+**What the script does:** overlap plus explicit anchors, and seam integrity is an acceptance criterion — no duplicate keys, no gap at a boundary.
+
+### 12. Page limits are advisory, not enforced
+
+The 50-page default comes from the GPT-5.4 ceiling. SuperApp does not police page counts, and no error is returned for exceeding a model's practical limit — the failure appears as dropped rows.
+
+**What the script does:** treats the row-count completeness check as the primary acceptance gate, precisely because the failure is silent.
+
+### 17a. Concurrent uploads draw `408 request body read timeout`
+
+The endpoint times out reading a request body far below its documented 25 MiB cap, and the trigger is **concurrency, not size**. Two models start their layout calls at the same instant and one of the two uploads fails; a 0.1 MiB document trips it on the first call of a run and recovers on retry, while a 0.9 MiB document failed all five attempts with both models running together. Running the same file with the models serialized succeeds.
+
+Three settings work around it, all in `config.yaml`:
+
+- `api.max_concurrent_calls: 1` — models run one after the other rather than together. This is the one that actually fixes it, and it doubles wall clock.
+- `api.max_retries: 4` — covers the first-call timeout that recovers on its own.
+- `chunking.max_request_bytes: 1048576` — splits page windows so no single body is large enough to be at risk.
+
+**Ponder:** none of this is visible from the API contract, and the thresholds were inferred from failures rather than documented. Whether the timeout lives in the endpoint, an ingress proxy, or the local uplink is unresolved — and it decides whether these settings are permanent or a workaround for one evening's network.
+
+### 18. The column hints were fitted to five documents
+
+`prompts.COLUMN_HINTS` encodes document shapes read out of the samples in this repository: a `LOSS RUN SUMMARY` table at the front, a `TOTAL` subtotal closing a policy block, an occurrence derivable by dropping a claim number's sequence suffix, `Losses as of` rather than `Run Date`. Each was confirmed against golden data — on **five documents and 92 claim rows**.
+
+That is enough to fix a failure and not enough to prove a rule. The occurrence-suffix rule in particular is a derivation, not a transcription: a document that prints a genuine occurrence column and *also* uses suffixed claim numbers would be read wrongly by a model that applies the rule too eagerly. The hint says to apply it only where the pattern is consistent down the column, which is a mitigation rather than a guarantee.
+
+**Ponder:** the honest next step is a holdout — score a document whose golden data was never read while writing these hints, and report that number separately.
+
+### 19. Golden and `schema.json` disagree about `Description`
+
+`schema.json` lists `Accident Description` among the allowed sources for `Description`. In a document carrying both a coded cause column and a free-text narrative, that phrasing points at the narrative — and golden holds the coded cause, consistently, across all 51 rows. Following the schema literally scores near zero on that column.
+
+The extraction hint now prefers the coded cause, and this is recorded in the results workbook's Assumptions sheet as a **recommended correction to the class definition** rather than applied silently.
+
+**Ponder:** the same ambiguity may sit in other column descriptions and only show up when a document happens to carry both candidate columns. Reading the remaining specs against golden, rather than waiting for a score to expose them, is cheap.
+
+### 20. The adjudicator is biased toward its own reading, and the size of it varies
+
+With `consensus.adjudicator` empty, the primary model adjudicates conflicts between itself and the second model. It is given the source text and may answer `neither`, so in principle it can concede.
+
+Measured across five documents: **166 conflicts raised, 119 settled, 14 conceded to the second model (11.8% of those settled).** The distribution is what matters, because it is not uniform:
+
+| Document | Conflicts | Settled | Conceded |
+| --- | --- | --- | --- |
+| `LRs_Application…` | 113 | 91 | **0** |
+| `Loss_2.pdf` | 41 | 23 | 12 |
+| `Loss Run_Report.pdf` | 11 | 4 | 2 |
+| `Loss-4.pdf` | 1 | 1 | 0 |
+| `Chubb_Loss-1.pdf` | 0 | — | — |
+
+On `LRs_Application` it conceded nothing across 91 decisions — on the document where the second model scored **higher** (96.7% against 92.7%), so a large share of those tie-breaks kept the worse value. That single document also carried the cost: 113 extra calls, roughly twentyfold on that run. Elsewhere it concedes about half the time.
+
+A model asked to choose between its own reading and a rival's is not a neutral judge, but "it never concedes" would be too strong — the behaviour is document-dependent.
+
+**Ponder:** point `adjudicator` at a third pin and re-measure. Until that is done, the stage's value is unproven and `--no-adjudicate` is the cheaper configuration.
+
+## Cost and portability caveats
+
+All three of the following are properties of the `superapp` route. Routing a pin to its vendor directly avoids each one, which is why `providers.default` is `auto`: a direct call is the measurement, and SuperApp is the fallback.
+
+### 13a. Gemini through SuperApp reports no token usage at all
+
+Confirmed on every run: `gemini/gemini-3.6-flash` returns a complete answer — full layout, full table — with `input_tokens: 0, output_tokens: 0`. Its cost therefore computes to exactly zero. The same model called directly reports real usage.
+
+**What the script does:** every call carries a `usage_missing` flag, the run summary carries `calls_without_usage`, and the CLI prints `cost warning: N of M calls reported no token counts; $X is a lower bound`. A partial cost is never presented as a total.
+
+**Consequence for model comparison:** a run that reaches Gemini through the fallback undercounts, and no like-for-like cost comparison is possible from that telemetry. A run with `GEMINI_API_KEY` set is comparable; `calls_without_usage: 0` is the check.
+
+### 13. A SuperApp run can attribute cost to the wrong model
+
+The `model` echoed on a Response is the pin that was requested, not necessarily what served the turn: each OpenAI pin declares a Gemini fallback, taken when the provider is unwired on the serving fleet. Cost is computed as configured price times returned tokens, so a silent substitution prices Gemini tokens at OpenAI rates or vice versa — and nothing in the response distinguishes the two cases.
+
+A direct call has no such indirection: the vendor endpoint serves the model named in the path or it errors. The `provider` column on the Telemetry sheet says which route each call took, so the calls exposed to this are identifiable rather than merely suspected.
+
+### 14. Prices are operator-maintained configuration
+
+No route returns dollars, only token counts, and the repository carries only coarse relative cost tiers. The `pricing` block in `config.yaml` is hand-maintained, and stale numbers produce confidently wrong cost reports.
+
+The table is keyed by model pin, so one price serves both routes for that pin — and the direct vendor rate is not what SuperApp bills. A run that mixes routes is therefore priced correctly for at most one of them. The `provider` column makes the affected calls identifiable, so such a run can be re-priced by hand.
+
+### 15. SuperApp runs a full agent, not a bare model call
+
+Each response on the `superapp` route is a complete SuperAgent run: context loading, tool scaffolding, agent-loop overhead. Token usage therefore exceeds what the same prompt would consume against a raw model endpoint.
+
+**Consequence:** a cost measured on the fallback route is an upper bound on a direct-to-model implementation, not a prediction of it. A run with both vendor keys set has no agent-loop overhead in its counts, and is the figure transferable to what Munich would pay on their own endpoint.
+
+### 16. Munich's endpoint may not expose the models this is validated on
+
+Their Azure endpoint carries GPT-4o, GPT-5.4 and text-embedding, apparently behind middleware that blocks calls to other models. A solution proven on Luna plus Gemini Flash still has an open deployment question.
+
+**What the script does:** every model-specific value lives in configuration — the pin, the page ceiling, the price. Re-validating on GPT-5.4 is a config change, not a rewrite. That is the main reason the design is model-agnostic rather than tuned to one model.
+
+**Ponder:** the 50-page chunk default exists for exactly this scenario. If the answer is GPT-5.4, chunking stops being the last-10% path and becomes the common path — which raises the stakes on seam integrity considerably.
+
+### 17. A completed response can carry empty output
+
+A silent agent route returns `status: completed` with an empty `output_text`. Read naively, that is a document with zero claims.
+
+**What the script does:** treats an empty output on an extraction call as a failed chunk and retries it, rather than recording zero rows.
+
+### 21. The `Idempotency-Key` does not deduplicate a retried create
+
+Both Responses clients send an `Idempotency-Key` on every create, but the key is generated inside the retry loop — a fresh UUID per attempt. Deduplication requires the key to be stable across attempts of the *same* logical call, so as written it cannot fire: a create that reached the server but whose response was lost to a timeout is retried as a new request and billed a second time.
+
+The failure needs a lost response rather than a lost request, so it is not the common case — but `408 request body read timeout` on large uploads is exactly the shape of failure that produces it, and `max_retries` is 4.
+
+**Fix:** hoist the UUID above the `for attempt` loop in `superapp_client.run`, so every attempt of one call carries one key. `OpenAIClient` inherits the same path, and OpenAI honours the header, so the fix covers both routes at once.
+
+**Until then:** a run's cost is an upper bound whenever `attempt > 1` appears in the ledger — the `attempt` column on each call is how to spot it.
