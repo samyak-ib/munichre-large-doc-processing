@@ -194,7 +194,7 @@ def test_deltas_report_the_difference_between_two_groups(tmp_path):
     from openpyxl import load_workbook
 
     book = load_workbook(out)
-    assert book.sheetnames == ["Summary", "By Document", "Deltas"]
+    assert book.sheetnames == ["Summary", "By Document", "Calls", "Deltas"]
     sheet = book["Deltas"]
     header = [c.value for c in sheet[5]]
     row = dict(zip(header, next(sheet.iter_rows(min_row=6, values_only=True))))
@@ -213,3 +213,55 @@ def _rename_document(workbook_path: Path, document: str) -> None:
             row[1].value = document
             break
     book.save(workbook_path)
+
+
+def test_per_call_telemetry_is_normalized_by_the_pages_that_call_carried(tmp_path):
+    """A layout call reading 5 header pages and an extraction call reading 50
+    are not the same unit, so per-page figures divide by the call's own span."""
+    golden = write_golden(tmp_path / "g.xlsx", [["d.pdf", "C1", "A", "TX", "P1"]])
+    layout = call(0.001, 0.004, stage="layout")
+    layout.pages = "1-5"
+    layout.input_tokens, layout.output_tokens = 500, 100
+    extract = call(0.01, 0.04)
+    extract.pages = "1-50"
+    extract.input_tokens, extract.output_tokens = 5000, 1000
+    run = make_run(
+        tmp_path / "run", final_state="TX", raw_state="TX", calls=[layout, extract]
+    )
+
+    group = compare.collect("qa", [run], SCHEMA, golden)
+    rows = compare.call_rows([group])
+
+    assert [r["stage"] for r in rows] == ["layout", "extract"]
+    assert rows[0]["page_count"] == 5
+    assert rows[0]["input_tokens_per_page"] == 100
+    assert rows[1]["page_count"] == 50
+    assert rows[1]["input_tokens_per_page"] == 100
+    assert rows[0]["label"] == "qa" and rows[0]["document"] == "d.pdf"
+
+
+def test_a_text_source_call_reports_no_page_count(tmp_path):
+    """`pages` is `text` for an email body — a per-page figure is meaningless
+    for it, which is not the same as zero."""
+    golden = write_golden(tmp_path / "g.xlsx", [["d.pdf", "C1", "A", "TX", "P1"]])
+    text_call = call(0.001, 0.004)
+    text_call.pages = "text"
+    run = make_run(tmp_path / "run", final_state="TX", raw_state="TX", calls=[text_call])
+
+    row = compare.call_rows([compare.collect("qa", [run], SCHEMA, golden)])[0]
+
+    assert row["page_count"] == 0
+    assert "input_tokens_per_page" not in row
+
+
+def test_the_comparison_workbook_carries_a_calls_sheet(tmp_path):
+    golden = write_golden(tmp_path / "g.xlsx", [["d.pdf", "C1", "A", "TX", "P1"]])
+    run = make_run(tmp_path / "run", final_state="TX", raw_state="TX")
+
+    out = compare.write_comparison(
+        [compare.collect("qa", [run], SCHEMA, golden)], tmp_path / "cmp.xlsx"
+    )
+
+    from openpyxl import load_workbook
+
+    assert load_workbook(out).sheetnames == ["Summary", "By Document", "Calls"]

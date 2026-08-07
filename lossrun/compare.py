@@ -60,6 +60,27 @@ DOCUMENT_COLUMNS = (
     "wall_clock_s",
 )
 
+# One row per API call: the finest telemetry there is, normalized by the pages
+# that call actually carried rather than by the document's total.
+CALL_DETAIL_COLUMNS = (
+    "label",
+    "document",
+    "stage",
+    "model",
+    "call_label",
+    "pages",
+    "page_count",
+    "status",
+    "latency_s",
+    "input_tokens",
+    "output_tokens",
+    "input_tokens_per_page",
+    "output_tokens_per_page",
+    "cost_input_usd",
+    "cost_output_usd",
+    "cost_total_usd",
+)
+
 # What a delta row reports. Rates are percentage-point differences; counts and
 # dollars are plain differences.
 DELTA_COLUMNS = (
@@ -243,18 +264,17 @@ def read_shipped_rows(workbook_path: Path) -> list[dict[str, str]]:
     ]
 
 
-def read_call_costs(workbook_path: Path) -> tuple[float, float] | None:
-    """Exact input and output cost, summed from the run's own per-call rows.
+def read_calls(workbook_path: Path) -> list[dict[str, Any]]:
+    """Every API call the run made, from the table under its summary block.
 
-    Every run records `cost_input_usd` and `cost_output_usd` per call, including
-    runs made before the summary block carried the split — so a comparison can
-    report a real breakdown rather than apportioning the total by token share,
-    which would understate output at four times the input price.
+    The per-call rows are the finest telemetry there is: one row per request,
+    carrying the stage that issued it, the pages it covered and its own token
+    counts and cost.
     """
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)
     try:
         if TELEMETRY_SHEET not in workbook.sheetnames:
-            return None
+            return []
         rows = list(workbook[TELEMETRY_SHEET].iter_rows(values_only=True))
     finally:
         workbook.close()
@@ -263,15 +283,81 @@ def read_call_costs(workbook_path: Path) -> tuple[float, float] | None:
         header = [str(c) if c is not None else "" for c in raw]
         if "cost_input_usd" not in header or "cost_output_usd" not in header:
             continue
-        left, right = header.index("cost_input_usd"), header.index("cost_output_usd")
-        total_in = total_out = 0.0
-        for call in rows[index + 1 :]:
-            if not call or all(v is None for v in call):
-                continue
-            total_in += _number(call[left] if left < len(call) else 0)
-            total_out += _number(call[right] if right < len(call) else 0)
-        return total_in, total_out
-    return None
+        return [
+            dict(zip(header, call))
+            for call in rows[index + 1 :]
+            if call and any(v is not None for v in call)
+        ]
+    return []
+
+
+def read_call_costs(workbook_path: Path) -> tuple[float, float] | None:
+    """Exact input and output cost, summed from the run's own per-call rows.
+
+    Every run records `cost_input_usd` and `cost_output_usd` per call, including
+    runs made before the summary block carried the split — so a comparison can
+    report a real breakdown rather than apportioning the total by token share,
+    which would understate output at four times the input price.
+    """
+    calls = read_calls(workbook_path)
+    if not calls:
+        return None
+    return (
+        sum(_number(c.get("cost_input_usd")) for c in calls),
+        sum(_number(c.get("cost_output_usd")) for c in calls),
+    )
+
+
+def call_rows(groups: list[Group]) -> list[dict[str, Any]]:
+    """Per-call telemetry across every run, labelled and normalized per page.
+
+    `pages` on a call is the page window it covered (`1-50`), so the per-page
+    figures here divide by the pages that call actually carried rather than by
+    the document's total — a layout call reading 5 header pages and an
+    extraction call reading 50 are not the same unit.
+    """
+    out: list[dict[str, Any]] = []
+    for group in groups:
+        for document in group.documents:
+            for call in read_calls(document.run_dir / "extraction.xlsx"):
+                pages = _page_span(call.get("pages"))
+                row = {
+                    "label": group.label,
+                    "document": document.document,
+                    "stage": call.get("stage", ""),
+                    "model": call.get("model", ""),
+                    "call_label": call.get("label", ""),
+                    "pages": call.get("pages", ""),
+                    "page_count": pages,
+                    "status": call.get("status", ""),
+                    "latency_s": _number(call.get("latency_s")),
+                    "input_tokens": int(_number(call.get("input_tokens"))),
+                    "output_tokens": int(_number(call.get("output_tokens"))),
+                    "cost_input_usd": round(_number(call.get("cost_input_usd")), 6),
+                    "cost_output_usd": round(_number(call.get("cost_output_usd")), 6),
+                    "cost_total_usd": round(_number(call.get("cost_total_usd")), 6),
+                }
+                if pages:
+                    row["input_tokens_per_page"] = round(row["input_tokens"] / pages)
+                    row["output_tokens_per_page"] = round(row["output_tokens"] / pages)
+                out.append(row)
+    return out
+
+
+def _page_span(value: object) -> int:
+    """How many pages a call covered, from its `start-end` label.
+
+    A text-source call carries `text` rather than a range, and reports 0 —
+    a per-page figure would be meaningless for it, not zero.
+    """
+    text = str(value or "").strip()
+    if not text or "-" not in text:
+        return 0
+    start, _, end = text.partition("-")
+    try:
+        return max(0, int(end) - int(start) + 1)
+    except ValueError:
+        return 0
 
 
 def read_summary(workbook_path: Path) -> dict[str, Any]:
@@ -310,6 +396,14 @@ def write_comparison(groups: list[Group], out_path: Path) -> Path:
         list(DOCUMENT_COLUMNS),
         [[r.get(c, "") for c in DOCUMENT_COLUMNS] for r in rows],
     )
+
+    calls = call_rows(groups)
+    if calls:
+        _write_sheet(
+            workbook.create_sheet("Calls"),
+            list(CALL_DETAIL_COLUMNS),
+            [[c.get(k, "") for k in CALL_DETAIL_COLUMNS] for c in calls],
+        )
 
     if len(groups) == 2:
         deltas = _deltas(groups[0], groups[1])
