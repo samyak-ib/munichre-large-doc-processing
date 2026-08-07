@@ -1,0 +1,30 @@
+[project]
+name = "lossrun"
+version = "0.1.0"
+description = "Loss-run table extraction via the SuperApp Responses API"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "pymupdf>=1.24",
+    "openpyxl>=3.1",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "extract-msg>=0.48",
+    "python-docx>=1.1",
+]
+
+[project.scripts]
+lossrun = "lossrun.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lossrun"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

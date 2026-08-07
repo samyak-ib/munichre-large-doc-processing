@@ -1,0 +1,159 @@
+# Loss-run extractor configuration.
+# Every value here is overridable by a CLI flag. See docs/APPROACH.md.
+
+api:
+  # SuperApp API base. The Responses endpoints hang off this as /responses.
+  base_url: https://superapp.instabase.com/api/v1
+  poll_interval_s: 3
+  poll_deadline_s: 900        # under the 60-minute workflow ceiling
+  request_timeout_s: 120
+  # Concurrent API calls across models. Two models uploading the same PDF
+  # simultaneously is enough to make the endpoint return `408 request body read
+  # timeout` on one of them, so this is 1: the models run one after the other.
+  # Raise it when the endpoint stops timing out; create is capped at 60/min.
+  max_concurrent_calls: 1
+  # Per call, on 503 / 408 / transient network failure. Large attachments draw
+  # `408 request body read timeout` from the endpoint often enough that two
+  # attempts is not sufficient: a 6.9 MiB scan failed all three, while the same
+  # file uploaded cleanly earlier the same day.
+  max_retries: 4
+
+models:
+  primary: openai/gpt-5.6-luna
+  consensus:
+    - openai/gpt-5.6-luna            # "Luna"
+    - gemini/gemini-3.5-flash-lite   # Anant's pick — direct Gemini only (not a SuperApp pin)
+  # GPT-only alternative for an endpoint that permits only OpenAI models.
+  # Same gpt-5.6 family, so the two correlate their errors — weaker consensus.
+  #   consensus: [openai/gpt-5.6-luna, openai/gpt-5.6-terra]
+  # Prior stand-in when only SuperApp was available:
+  #   consensus: [openai/gpt-5.6-luna, gemini/gemini-3.6-flash]
+  overrides:
+    openai/gpt-5.6-luna:
+      max_pages_per_chunk: 50
+      # "Luna Max" — Luna at maximum reasoning effort, as recommended on the
+      # call. Effort must be set per model, not globally: max is OpenAI-only and
+      # a Gemini pin rejects it with a 400.
+      effort: max
+    openai/gpt-5.6-terra:
+      max_pages_per_chunk: 50
+    openai/gpt-5.6-sol:
+      max_pages_per_chunk: 50
+    gemini/gemini-3.5-flash-lite:
+      max_pages_per_chunk: 100
+      # SuperApp returns 400 Unsupported model for this pin; force the direct
+      # Google route so a missing GEMINI_API_KEY fails loudly instead of
+      # falling back through the agent loop.
+      provider: gemini
+      # No effort override: low/medium/high only, and its default works.
+    gemini/gemini-3.6-flash:
+      max_pages_per_chunk: 100
+      # provider: superapp        # pin the route, overriding providers.default
+      # api_model: gemini-3.6-flash   # id the vendor expects, if it differs
+      # No effort override: low/medium/high only, and its default works.
+
+consensus:
+  # When the two models disagree on a cell, ask a third opinion which of the two
+  # candidates the document supports, instead of always keeping the primary's
+  # value. One text-only call per conflicting cell — no attachment, so it is far
+  # cheaper than an extraction call. The adjudicator may only pick A, B or
+  # neither; it can never supply a value of its own.
+  adjudicate: true
+  # Which model settles the ties. Empty means the primary model, which biases
+  # the tie-break toward its own reading — a neutral third pin is preferable.
+  adjudicator: ""
+
+providers:
+  # Where each model's calls go.
+  #
+  #   auto      each pin calls its own vendor directly when that vendor's API key
+  #             is set, and falls back to superapp when it is not. Preferred: a
+  #             direct call reaches the model it names and reports real token
+  #             counts, neither of which holds through the agent loop.
+  #   superapp  the SuperApp Responses API, with SUPERAPP_TOKEN
+  #   openai    api.openai.com directly, with OPENAI_API_KEY
+  #   gemini    Google's API directly, with GEMINI_API_KEY
+  #
+  # Override per model with `provider:` under models.overrides, or for one run
+  # with --provider. A provider named outright is honored or fails: it never
+  # falls back, because a silent downgrade would bill through the agent loop
+  # while config and telemetry claim otherwise.
+  default: auto
+
+  superapp:
+    # The 408 workaround, and the reason this ceiling is set per provider rather
+    # than per model: the endpoint returns `408 request body read timeout` far
+    # below the 25 MiB it accepts — a 0.9 MiB upload failed all five attempts —
+    # so windows are split at 1 MiB on this route only. A model that reaches its
+    # vendor directly is not held to it.
+    max_request_bytes: 1048576
+
+  openai:
+    # 20 MiB, the vendor inline ceiling. Fewer, larger windows mean fewer calls,
+    # fewer seams to stitch, and better row continuity across page boundaries.
+    max_request_bytes: 20971520
+    # base_url: https://api.openai.com/v1
+    # No temperature: the gpt-5.6 reasoning models reject it.
+
+  gemini:
+    max_request_bytes: 20971520
+    # Direct calls can set temperature, which the SuperApp Responses subset
+    # cannot. Zero is what an extraction pass wants: transcription, not sampling.
+    temperature: 0.0
+    # base_url: https://generativelanguage.googleapis.com/v1beta
+    # Optional effort -> thinking budget (tokens). Unmapped efforts leave the
+    # model's own default alone rather than guessing a budget.
+    # thinking_budgets:
+    #   low: 0
+    #   medium: 4096
+    #   high: 16384
+
+reasoning:
+  # Reasoning effort per stage. The API validates these against the model and
+  # rejects an unsupported level with a 400 rather than clamping it.
+  #
+  # `extract` sends no preference by default. Lowering it was expected to curb
+  # the claim-number autocorrection reported on the call, but three runs over
+  # the same document showed effort is not the variable that matters —
+  # identical settings produced both the best and the worst result:
+  #
+  #   default : 51/51 rows agreed across models, 94.1% cell agreement
+  #   low     :  9/51 rows agreed, 80.0%
+  #   default :  0/51 rows agreed, 0.0%
+  #
+  # The real instability is Luna intermittently returning the claim adjuster as
+  # the claimant on stacked two-line headers. See docs/CHALLENGES.md #1.
+  # Override per run with --effort to re-test on other documents.
+  #
+  # low / medium / high are accepted by every selectable model.
+  # xhigh / max are OpenAI-only and 400 on Gemini.
+  layout: medium
+  extract: default
+
+chunking:
+  max_pages_per_chunk: 50     # GPT-5.4 ceiling; raised per model above
+  overlap_pages: 2
+  header_pages: 5             # pages sent to layout discovery
+  overlap_anchor_rows: 12     # row keys handed to the next chunk as seam anchors
+  # Baseline request-body ceiling. Each provider block above sets its own, which
+  # wins over this, and a models.overrides entry wins over both — the limit
+  # belongs to the transport doing the upload, not to the model.
+  max_request_bytes: 20971520
+  max_resumes: 3              # continuation calls per chunk on truncated output
+
+pricing:                      # USD per 1M tokens — operator-maintained, see docs/CHALLENGES.md
+  openai/gpt-5.6-luna:
+    input: 0.20
+    output: 0.80
+  openai/gpt-5.6-terra:
+    input: 1.25
+    output: 5.00
+  openai/gpt-5.6-sol:
+    input: 1.25
+    output: 10.00
+  gemini/gemini-3.5-flash-lite:
+    input: 0.30
+    output: 2.50
+  gemini/gemini-3.6-flash:
+    input: 0.20
+    output: 0.80

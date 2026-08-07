@@ -1,0 +1,16 @@
+# Credentials — .env.example is the tracked template
+.env
+
+# Run outputs. Per-batch reports in initial_results/ are tracked; the raw
+# per-document run directories under out/ are not.
+out/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# macOS
+.DS_Store

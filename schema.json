@@ -1,0 +1,783 @@
+{
+    "classes": {
+        "68813": {
+            "id": "68813",
+            "class_name": "DEFAULT_CLASS_NAME",
+            "description": "",
+            "fields": [
+                {
+                    "id": "407584",
+                    "name": "Insured",
+                    "data_type": "TEXT",
+                    "type": "basic",
+                    "lines": [
+                        {
+                            "line_type": "PROMPT",
+                            "prompt": "If Insured Name contains \"dba\", \"DBA\", \"aka\", \"doing business as\" or similar alias, return only the complete entity name value before the alias indicator.\nIf a name is present in brackets along with main insured name return it along with main name it example:\nIf extracted value is ABC LLC (MNC LLC), return ABC LLC (MNC LLC).\nIf multiple value are present return all the values."
+                        }
+                    ],
+                    "prompt": "Insured",
+                    "description": "Extract the complete Insured Name and if it has multiple names are present return all.\nPriority order:\n1. Look for fields explicitly labeled \"Insured\", \"Named Insured\", \"Insured Name\", \"Account Name\", \"Policyholder\", \"For\", \"for\", or similar. Focus on headers like \"Insured\", \"Insured Name\", \"for\".\n2. If no explicit label exists, identify the organization or entity displayed prominently in the report header that the loss run or policy information pertains to.\n3. Verify that the extracted value is associated with the policy/report owner and not with an individual claim.\nConstraints:\n- Do not extract Claimant Name or Insurer Name.\n- Do not select names appearing inside claims tables unless they are explicitly identified as the insured.\n- Do not infer or fabricate values.\n- If the insured name cannot be confidently identified, return \"N/A\".",
+                    "model_type": "DEFAULT",
+                    "field_visibility": "VISIBLE",
+                    "prompt_schema": null,
+                    "prompt_settings": {}
+                },
+                {
+                    "id": "407585",
+                    "name": "Valuation Date",
+                    "data_type": "TEXT",
+                    "type": "basic",
+                    "lines": [
+                        {
+                            "line_type": "UDF",
+                            "function_id": "18290",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407585",
+                                    "line_index": 0
+                                }
+                            ]
+                        }
+                    ],
+                    "prompt": "Valuation Date",
+                    "description": "Identify the Valuation Date also known as the ‘As Of Date’ or ‘Evaluation Date’. This is the date representing the snapshot of when the claim data was calculated usually present in the header or footer of the document.\nInstructions:\n- Look in the top header or footer for the phrase ‘As of’, 'Generated' or ‘Valuation Date’, 'Date', 'Date Processed ' or similar keywords.\n- Do not confuse this with the ‘Policy Term’ or the ‘Print Date’ (usually found in a timestamp at the very bottom).\n- If date value is found, return date only otherwise return 'N/A'.\n- If value is found, return date value only without weekday or time details.\n- Do not extract 'Claim Report Date' or any other Date.",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "VISIBLE",
+                    "prompt_schema": null,
+                    "prompt_settings": {}
+                },
+                {
+                    "id": "443011",
+                    "name": "Key Fields",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [],
+                    "prompt": "Key Fields",
+                    "description": "Extract all Policy Number , Claimant Name and Claim Number for every claim reported.",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        },
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "445867",
+                    "name": "Policy Date Details",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [],
+                    "prompt": "Policy Date Details",
+                    "description": "Extract all the basic Policy and the Claims details that are reported. Return as a list or array where the first row contains: [\"Policy Number\", \"Claim Number\",  \"Policy Effective Date\", \"Policy Expiration Date\", \"Claimant Name\"].",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        },
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Policy Effective Date",
+                            "description": "The Policy Effective Date is the specific date and time when the insurance coverage officially begins for a given policy period. It marks the start of the \"Term\" for which the insurance company has agreed to accept risk. It may not be always present in a Loss Run Report, in such scenario return the date as \"N/A\". Return the date in \"MM/DD/YYYY\" format."
+                        },
+                        {
+                            "name": "Policy Expiration Date",
+                            "description": "The Policy Expiration Date is the exact date and time when an insurance policy's coverage officially ends. It represents the conclusion of the \"Term\" or \"Period\" listed on the Loss Run Report. It may not be always present in a Loss Run Report, in such scenario return the date as \"N/A\". Return the date in \"MM/DD/YYYY\" format. Do not extract the Policy effective date."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "445869",
+                    "name": "Policy LOB Details",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [],
+                    "prompt": "Policy LOB Details",
+                    "description": "Extract all the basic Policy and the Claims details that are reported. Return as a list or array where the first row contains: [\"Policy Number\", \"Claim Number\", \"Line of Business\", \"Claimant Name\"].",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        },
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Line of Business",
+                            "description": "High-level category identifying the specific type of insurance coverage.\n \nPriority Order:\nExtract strictly from these explicitly labelled fields in this order:\nLOB / Line of Business\nClaim Type\nClaim Description\nSubline\n  \n\nDo not Extract anything from these fields: 'Coverage', 'Cvg', 'Coverage Type', 'Coverage Description', 'Title', 'Accident Description', 'Accident Details', 'Department', 'Dept', 'Cause of Loss' etc.\n- Return N/A if explicitly not labelled or not found\n- Extract the complete LOB value with all associated prefixes and suffixes (such as MPL, LPL, Lawyers, Primary, Quota Share).\n- Do not truncate or shorten modifiers.\n- Do not extract any kind of description along with LOB\n- Priorities Claim Type over subline if present e.g. 'Property'"
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "471256",
+                    "name": "Policy Total Details",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [],
+                    "prompt": "Policy Total Details",
+                    "description": "Extract all the basic Policy and the Claims details that are reported. Return as a list or array where the first row contains: [\"Policy Number\", \"Claim Number\", \"Claimant Name\", \"Policy Total\"]",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        },
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Policy Total",
+                            "description": "The Policy Total represents the aggregated financial total of all claims occurring under a single, specific policy number or policy period. It is typically found in a Policy Summary table, a policy-level Grand Total row, or a summary subtotal at the end of a policy block.\nLook for explicit headers or row labels such as Policy Total, Policy Year Total, Policy Subtotal, Policy Incurred, Policy Year Incurred, Term Total, Policy Term Total, Period Total, Policy Summary Total, or Grand Total (when summarizing a specific policy block). In a Policy Summary table, it may also be labelled as Total Incurred or Incurred.\n\n\n- Do not extract individual Claim Totals (do not pull the Total Incurred from an individual claim row).\n- Do not extract the overall account-level Grand Total (the sum of all policies combined) unless the entire document contains only one policy.\n\n- Extract only the numeric monetary value. If the value is not explicitly found, return N/A."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "471257",
+                    "name": "Policy Details Insurer Loss Run",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [],
+                    "prompt": "Policy Details Insurer Loss Run",
+                    "description": "Extract all the basic Policy and the Claims details that are reported. Return as a list or array where the first row contains: [\"Policy Number\", \"Claim Number\", \"Claimant Name\", \"Insurer Loss Run\"].",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies"
+                        },
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Insurer Loss Run",
+                            "description": "INSURER NAME EXTRACTION INSTRUCTIONS\nDefinition: Extract the full company name of the Insurer. For each claim, look at the Insurer associated with the Policy Number, typically located in the Policy Summary or header.\n \nPriority Order (Highest to Lowest):\nCarrier\nInsurer\nCompany / Insurance Company / Underwriting Company\nHeader company name\nLogo company name\n \nStrict Rules:\nUse the highest-priority company available.\nExtract the complete name, including terms like Insurance, Reinsurance, etc., even if they are present on the line below.\nIf multiple logos with company names exist, extract all (for example: XL Insurance AXA).\nReturn only the company name. Do not confuse it with the Insured name. Do not extract Insured or any other field.\nDo not extract Agent, Producer, Broker, Agency, TPA, Claims Administrator, or Adjuster names.\nDo not extract values after dba, aka, or similar aliases as the Insurer.\nIf no logo or header is present, or if the field is not explicitly labelled, return N/A."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "407586",
+                    "name": "Policy Claim Details",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [
+                        {
+                            "line_type": "UDF",
+                            "function_id": "19965",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407586",
+                                    "line_index": 0
+                                },
+                                {
+                                    "name": "Key_Fields",
+                                    "data_type": "FIELD",
+                                    "field_id": "443011"
+                                },
+                                {
+                                    "name": "Policy_Date_Details",
+                                    "data_type": "FIELD",
+                                    "field_id": "445867"
+                                },
+                                {
+                                    "name": "Policy_LOB_Details",
+                                    "data_type": "FIELD",
+                                    "field_id": "445869"
+                                },
+                                {
+                                    "name": "Policy_Total_Details",
+                                    "data_type": "FIELD",
+                                    "field_id": "471256"
+                                },
+                                {
+                                    "name": "Policy_Details_Insurer_Loss_Run",
+                                    "data_type": "FIELD",
+                                    "field_id": "471257"
+                                }
+                            ]
+                        },
+                        {
+                            "line_type": "UDF",
+                            "function_id": "18294",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407586",
+                                    "line_index": 1
+                                }
+                            ]
+                        },
+                        {
+                            "line_type": "UDF",
+                            "function_id": "18295",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407586",
+                                    "line_index": 2
+                                }
+                            ]
+                        },
+                        {
+                            "line_type": "UDF",
+                            "function_id": "18296",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407586",
+                                    "line_index": 3
+                                }
+                            ]
+                        }
+                    ],
+                    "prompt": "Policy Claim Details",
+                    "description": "Extract all the basic Policy and the Claims details that are reported. Return as a list or array where the first row contains: [\"Policy Number\", \"Claim Number\", \"Line of Business\", \"Policy Effective Date\", \"Policy Expiration Date\" \"Policy Year\", \"Claimant Name\", \"Insurer Loss Run\", \"Policy Total\"].",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        },
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Line of Business",
+                            "description": "High-level category identifying the specific type of insurance coverage.\n \nPriority Order:\nExtract strictly from these explicitly labelled fields in this order:\nLOB / Line of Business\nClaim Type\nClaim Description\nSubline\n  \n\nDo not Extract anything from these fields: 'Coverage', 'Cvg', 'Coverage Type', 'Coverage Description', 'Title', 'Accident Description', 'Accident Details', 'Department', 'Dept', 'Cause of Loss' etc.\n- Return N/A if explicitly not labelled or not found\n- Extract the complete LOB value with all associated prefixes and suffixes (such as MPL, LPL, Lawyers, Primary, Quota Share).\n- Do not truncate or shorten modifiers.\n- Do not extract any kind of description along with LOB\n- Priorities Claim Type over subline if present e.g. 'Property'"
+                        },
+                        {
+                            "name": "Policy Effective Date",
+                            "description": "The Policy Effective Date is the specific date and time when the insurance coverage officially begins for a given policy period. It marks the start of the \"Term\" for which the insurance company has agreed to accept risk. It may not be always present in a Loss Run Report, in such scenario return the date as \"N/A\". Return the date in \"MM/DD/YYYY\" format."
+                        },
+                        {
+                            "name": "Policy Expiration Date",
+                            "description": "The Policy Expiration Date is the exact date and time when an insurance policy's coverage officially ends. It represents the conclusion of the \"Term\" or \"Period\" listed on the Loss Run Report. It may not be always present in a Loss Run Report, in such scenario return the date as \"N/A\". Return the date in \"MM/DD/YYYY\" format. Do not extract the Policy effective date."
+                        },
+                        {
+                            "name": "Policy Year",
+                            "description": "The Policy Year (often referred to as the “Policy Period” or “Term”) is the specific 12-month window during which an insurance policy is active. It is used to group claims based on the specific contract that was in place when the accident occurred. The policy year might not be always present in a report, in such scenario return it as \"N/A\"."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Insurer Loss Run",
+                            "description": "INSURER NAME EXTRACTION INSTRUCTIONS\nDefinition: Extract the full company name of the Insurer. For each claim, look at the Insurer associated with the Policy Number, typically located in the Policy Summary or header.\n \nPriority Order (Highest to Lowest):\nCarrier\nInsurer\nCompany / Insurance Company / Underwriting Company\nHeader company name\nLogo company name\n \nStrict Rules:\nUse the highest-priority company available.\nExtract the complete name, including terms like Insurance, Reinsurance, etc., even if they are present on the line below.\nIf multiple logos with company names exist, extract all (for example: XL Insurance AXA).\nReturn only the company name. Do not confuse it with the Insured name. Do not extract Insured or any other field.\nDo not extract Agent, Producer, Broker, Agency, TPA, Claims Administrator, or Adjuster names.\nDo not extract values after dba, aka, or similar aliases as the Insurer.\nIf no logo or header is present, or if the field is not explicitly labelled, return N/A."
+                        },
+                        {
+                            "name": "Policy Total",
+                            "description": "The Policy Total represents the aggregated financial total of all claims occurring under a single, specific policy number or policy period. It is typically found in a Policy Summary table, a policy-level Grand Total row, or a summary subtotal at the end of a policy block.\nLook for explicit headers or row labels such as Policy Total, Policy Year Total, Policy Subtotal, Policy Incurred, Policy Year Incurred, Term Total, Policy Term Total, Period Total, Policy Summary Total, or Grand Total (when summarizing a specific policy block). In a Policy Summary table, it may also be labelled as Total Incurred or Incurred.\n\n\n- Do not extract individual Claim Totals (do not pull the Total Incurred from an individual claim row).\n- Do not extract the overall account-level Grand Total (the sum of all policies combined) unless the entire document contains only one policy.\n\n- Extract only the numeric monetary value. If the value is not explicitly found, return N/A."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "443058",
+                    "name": "Claim Detail Status",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [],
+                    "prompt": "Claim Detail Status",
+                    "description": "Extract all the basic Claim Details for all the Claims that are reported under each Policy. Extract all the rows and forward fill all the vertically merged cells like if multiple description are present in different cells extract these as different rows.\nReturn as a list or array where the first row contains: [\"Policy Number\", \"Claim Number\", \"Claimant Name\", \"Claim Status (Actual)\",\"Loss State\"].",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Claim Status",
+                            "description": "The Claim Status is a critical field that indicates where a specific claim sits in its \"lifecycle\". It tells the underwriter whether the insurance company is still actively dealing with the claim or if the matter has been finalized. \nExtraction Rules:\n- Extract value from the column labeled or value labeled as 'Status', 'Clm Stat', 'Claim Status' or 'S'.\n- For each row, identify if the claim is Open, Closed, or Reopened. Extract the claim status value as it is present in document. If not found, return 'N/A'."
+                        },
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        },
+                        {
+                            "name": "Loss State",
+                            "description": "The Loss State field (sometimes labeled simply as \"Location\" or \"Loss Site\" or \"Insured State\") identifies the exact physical address or the state where the incident took place. While the \"Insured Address\" in the header tells you where the business headquarters is located, the \"Loss Location\" tells the underwriter where the actual danger or accident occurred. For each claim row, look for a physical address (Street, City, State, Zip). It can be found as \"Insured State\". The address may not be in a labeled column; it may be positioned directly below the Claim Number or within the Claim Description. Return only the State Name from the location without the Street Address Line, City Name and Zip Code. If value is not found, return 'N/A'. Do not extract date or any other data."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "443059",
+                    "name": "Claim Detail Date",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [],
+                    "prompt": "Claim Detail Date",
+                    "description": "Extract all the basic Claim Details for all the Claims that are reported under each Policy. Extract all the rows and forward fill all the vertically merged cells like if multiple description are present in different cells extract these as different rows. \nReturn as a list or array where the first row contains: [\"Policy Number\", \"Claim Number\", \"Claimant Name\", \"Report Date\", \"Closed Date\"].",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Report Date",
+                            "description": "The Claim Report Date is the specific day the insurance company, the agent, or the broker was first notified about the incident. \nExtraction Rules:\n- **Strict Exclusion**: Never extract this from \"Date of Loss\", \"Loss Date\" and \"Loss Details\".\n- Extract value from the column labeled or value labeled as 'Date Reported','Report Date', 'Date of Claim', 'Rpt Date', 'Notification Date', 'Claim Open Date', \"Open Date\" or 'Reported'. \n- For each row, extract the date the carrier was notified if found. Ensure you do not confuse this with the 'Date of Loss'. \n- Return the date in 'MM/DD/YYYY' format. Return \"N/A\" if not found."
+                        },
+                        {
+                            "name": "Closed Date",
+                            "description": "1. Identify the Status: Look for the column labeled \"Date of Loss / Status\" or \"Status\".\n2. Locate \"CLOSED\": If the status for a specific claim is \"CLOSED\", look for a date within that same cell or column.\n3. Positional Rule: The Claim Closed Date is the date positioned directly below or following the word \"CLOSED\".\n4. Exclusion Rule: Do NOT extract the date at the very top of the \"Date of Loss / Status\" cell; this is the Date of Loss\n(e.g., in the first row, 11/26/2020 is the Date of Loss, and 06/21/2022 is the Closed Date).\n5. **Strict Exclusion**: Never extract this from Policy Expiration Date.\n6. Validation: Ensure the date extracted is associated with the correct Claim Number in that specific row. Do not pull\ndates from rows above or below.\n7. Open Claims: If the status is \"OPEN\", or if the word \"CLOSED\" appears without a date underneath it, return \"N/A\".\n8. Format: Return the result in MM/DD/YYYY format."
+                        },
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "443091",
+                    "name": "Claim Detail Description",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [],
+                    "prompt": "Claim Detail Description",
+                    "description": "Extract all the basic Claim Details for all the Claims that are reported under each Policy. Extract all the rows and forward fill all the vertically merged cells like if multiple description are present in different cells extract these as different rows.\nReturn as a list or array where the first row contains: [\"Policy Number\", \"Claim Number\", \"Claimant Name\", \"Description\"].",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        },
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Description",
+                            "description": "CLAIM DESCRIPTION EXTRACTION INSTRUCTIONS\n \nDefinition: The Claim Description (also called Claim Narrative, Loss Remarks, ''Accident Description, or Description) is a text-based narrative of how and why the incident occurred.\n \nPriority and Fallbacks:\nExtract the exact, complete narrative text from the description columns.\nFallback: If missing, extract the narrative description from the Loss Cause column.\nSplit Description: If present as both Cause Cd Desc and Nature/result Desc, extract both and merge them, keeping the exact document formatting (preserve original newlines as newlines; do not add extra characters).\n \nStrict Exclusions:\nDo not extract from 'Damage Type' or 'Loss Type'.\nDo not extract short categorical classifications (such as Wind, Water, Rear End, Slip and Fall) as the narrative description.\nIf not explicitly labelled with one of the allowed terms above, do not extract anything and return N/A."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "445868",
+                    "name": "Claim Accident Date",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [],
+                    "prompt": "Claim Accident Date",
+                    "description": "Extract all the basic Claim Details for all the Claims that are reported under each Policy. Extract all the rows and forward fill all the vertically merged cells like if multiple description are present in different cells extract these as different rows. \nReturn as a list or array where the first row contains: [\"Policy Number\", \"Claim Number\", \"Claimant Name\", \"Accident Date\"].",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        },
+                        {
+                            "name": "Accident Date",
+                            "description": "The Accident Date is the exact calendar day on which the incident or accident actually took place which can only be found labelled as 'Date of Loss', 'Loss Date', 'Occurrence Date', 'Acc Date', 'Date of Incident', 'Incident Date' or 'DOL'otherwise wouldn't be present and return 'N/A'\nStrictly exclude extracting values from Claim Open date, Open date, Claim Date or Date Reported columns.\nLocate the column labeled 'Date of Loss', 'Loss Date', 'Occurrence Date', 'Acc Date', 'Date of Incident', 'Incident Date' or 'DOL' and extract value for each from tehse columns only if found.\nReturn the date in 'MM/DD/YYYY' format."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "407588",
+                    "name": "Claim_Details_Basic",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [
+                        {
+                            "line_type": "UDF",
+                            "function_id": "19966",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407588",
+                                    "line_index": 0
+                                },
+                                {
+                                    "name": "Key_Fields",
+                                    "data_type": "FIELD",
+                                    "field_id": "443011"
+                                },
+                                {
+                                    "name": "Claim_Detail_Status",
+                                    "data_type": "FIELD",
+                                    "field_id": "443058"
+                                },
+                                {
+                                    "name": "Claim_Detail_Date",
+                                    "data_type": "FIELD",
+                                    "field_id": "443059"
+                                },
+                                {
+                                    "name": "Claim_Detail_Description",
+                                    "data_type": "FIELD",
+                                    "field_id": "443091"
+                                },
+                                {
+                                    "name": "Claim_Accident_Date",
+                                    "data_type": "FIELD",
+                                    "field_id": "445868"
+                                }
+                            ]
+                        },
+                        {
+                            "line_type": "UDF",
+                            "function_id": "18297",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407588",
+                                    "line_index": 1
+                                }
+                            ]
+                        },
+                        {
+                            "line_type": "UDF",
+                            "function_id": "18298",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407588",
+                                    "line_index": 2
+                                }
+                            ]
+                        },
+                        {
+                            "line_type": "UDF",
+                            "function_id": "18838",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407588",
+                                    "line_index": 3
+                                }
+                            ]
+                        }
+                    ],
+                    "prompt": "Claim_Details_Basic",
+                    "description": "Extract all the basic Claim Details for all the Claims that are reported under each Policy. Extract all the rows and forward fill all the vertically merged cells like if multiple description are present in different cells extract these as different rows.\nReturn as a list or array where the first row contains: [\"Policy Number\", \"Claim Number\", \"Claimant Name\", \"Description\", \"Claim Status (Actual)\", \"Accident Date\", \"Report Date\", \"Closed Date\", \"Loss State\", \"Occurrence ID\"].",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Description",
+                            "description": "CLAIM DESCRIPTION EXTRACTION INSTRUCTIONS\n \nDefinition: The Claim Description (also called Claim Narrative, Loss Remarks, ''Accident Description, or Description) is a text-based narrative of how and why the incident occurred.\n \nPriority and Fallbacks:\nExtract the exact, complete narrative text from the description columns.\nFallback: If missing, extract the narrative description from the Loss Cause column.\nSplit Description: If present as both Cause Cd Desc and Nature/result Desc, extract both and merge them, keeping the exact document formatting (preserve original newlines as newlines; do not add extra characters).\n \nStrict Exclusions:\nDo not extract from 'Damage Type' or 'Loss Type'.\nDo not extract short categorical classifications (such as Wind, Water, Rear End, Slip and Fall) as the narrative description.\nIf not explicitly labelled with one of the allowed terms above, do not extract anything and return N/A."
+                        },
+                        {
+                            "name": "Claim Status",
+                            "description": "The Claim Status is a critical field that indicates where a specific claim sits in its \"lifecycle\". It tells the underwriter whether the insurance company is still actively dealing with the claim or if the matter has been finalized. \nExtraction Rules:\n- Extract value from the column labeled or value labeled as 'Status', 'Clm Stat', 'Claim Status' or 'S'.\n- For each row, identify if the claim is Open, Closed, or Reopened. Extract the claim status value as it is present in document. If not found, return 'N/A'."
+                        },
+                        {
+                            "name": "Accident Date",
+                            "description": "The Accident Date is the exact calendar day on which the incident or accident actually took place which can only be found labelled as 'Date of Loss', 'Loss Date', 'Occurrence Date', 'Acc Date', 'Date of Incident', 'Incident Date' or 'DOL'otherwise wouldn't be present and return 'N/A'\nStrictly exclude extracting values from Claim Open date, Open date, Claim Date or Date Reported columns.\nLocate the column labeled 'Date of Loss', 'Loss Date', 'Occurrence Date', 'Acc Date', 'Date of Incident', 'Incident Date' or 'DOL' and extract value for each from tehse columns only if found.\nReturn the date in 'MM/DD/YYYY' format."
+                        },
+                        {
+                            "name": "Report Date",
+                            "description": "The Claim Report Date is the specific day the insurance company, the agent, or the broker was first notified about the incident. \nExtraction Rules:\n- **Strict Exclusion**: Never extract this from \"Date of Loss\", \"Loss Date\" and \"Loss Details\".\n- Extract value from the column labeled or value labeled as 'Date Reported','Report Date', 'Date of Claim', 'Rpt Date', 'Notification Date', 'Claim Open Date', \"Open Date\" or 'Reported'. \n- For each row, extract the date the carrier was notified if found. Ensure you do not confuse this with the 'Date of Loss'. \n- Return the date in 'MM/DD/YYYY' format. Return \"N/A\" if not found."
+                        },
+                        {
+                            "name": "Closed Date",
+                            "description": "1. Identify the Status: Look for the column labeled \"Date of Loss / Status\" or \"Status\".\n2. Locate \"CLOSED\": If the status for a specific claim is \"CLOSED\", look for a date within that same cell or column.\n3. Positional Rule: The Claim Closed Date is the date positioned directly below or following the word \"CLOSED\".\n4. Exclusion Rule: Do NOT extract the date at the very top of the \"Date of Loss / Status\" cell; this is the Date of Loss\n(e.g., in the first row, 11/26/2020 is the Date of Loss, and 06/21/2022 is the Closed Date).\n5. **Strict Exclusion**: Never extract this from Policy Expiration Date.\n6. Validation: Ensure the date extracted is associated with the correct Claim Number in that specific row. Do not pull\ndates from rows above or below.\n7. Open Claims: If the status is \"OPEN\", or if the word \"CLOSED\" appears without a date underneath it, return \"N/A\".\n8. Format: Return the result in MM/DD/YYYY format."
+                        },
+                        {
+                            "name": "Loss State",
+                            "description": "The Loss State field (sometimes labeled simply as \"Location\" or \"Loss Site\" or \"Insured State\") identifies the exact physical address or the state where the incident took place. While the \"Insured Address\" in the header tells you where the business headquarters is located, the \"Loss Location\" tells the underwriter where the actual danger or accident occurred. For each claim row, look for a physical address (Street, City, State, Zip). It can be found as \"Insured State\". The address may not be in a labeled column; it may be positioned directly below the Claim Number or within the Claim Description. Return only the State Name from the location without the Street Address Line, City Name and Zip Code. If value is not found, return 'N/A'. Do not extract date or any other data."
+                        },
+                        {
+                            "name": "Occurrence ID",
+                            "description": "The Occurrence ID is a unique identifier for the specific accident or event that caused the loss. In many loss runs, one occurrence can lead to multiple claims, so this ID groups related claims together. Look in the main data table for columns labeled 'Occurrence #', 'Occ No', 'Occurrence ID', 'Event ID', 'Occur Ref', or 'Occurrence Number'. If the document uses a combined column, it may be labelled 'Claim/Occurrence #'. Return 'N/A' if not found"
+                        },
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "407589",
+                    "name": "Claim Financial Details",
+                    "data_type": "OBJECT_LIST",
+                    "type": "basic",
+                    "lines": [
+                        {
+                            "line_type": "UDF",
+                            "function_id": "18299",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407589",
+                                    "line_index": 0
+                                }
+                            ]
+                        },
+                        {
+                            "line_type": "UDF",
+                            "function_id": "18300",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407589",
+                                    "line_index": 1
+                                }
+                            ]
+                        },
+                        {
+                            "line_type": "UDF",
+                            "function_id": "18839",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407589",
+                                    "line_index": 2
+                                }
+                            ]
+                        },
+                        {
+                            "line_type": "UDF",
+                            "function_id": "19967",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407589",
+                                    "line_index": 3
+                                },
+                                {
+                                    "name": "Key_Fields",
+                                    "data_type": "FIELD",
+                                    "field_id": "443011"
+                                }
+                            ]
+                        }
+                    ],
+                    "prompt": "Claim Financial Details",
+                    "description": "Extract the Financial Details of all the Claims that are reported. Consider every amount value in a row as an individual claim. Return as a list or array where the first row contains: [\"Claim Number\", \"Indemnity Paid\", \"Indemnity Reserve\", \"Expense Paid\", \"Expense Reserved\", \"Recovery Salvage Subro Reins\", \"Recovery Deductible\", \"Claimant Name\", \"Policy Number\", \"Claim Total\"].",
+                    "model_type": "ADVANCED",
+                    "field_visibility": "HIDDEN",
+                    "prompt_schema": [
+                        {
+                            "name": "Claim Number",
+                            "description": "The Claim Number is an identifier assigned by the insurance company to a specific incident or loss once it is reported. While the Policy Number identifies the contract, the Claim Number identifies the individual accident. Locate the main data table where individual incidents are listed. Identify the column labelled 'Claim No', 'Claim #', 'Claim Reference Number', 'Claim Reference', 'Claim Number', or other similar column headers. Always extract full claim number including space separated digits like '1', '2' etc. if found. \nLabel Preference : \n- Prefer standard labels like `Claim #` or `Claim Number` over company-specific, internal, or vendor labels like 'AIM clm#' \nStrict Exclusion:\n- Strictly exclude any values from Policy Number. \n- Exclude suffixes ONLY if the suffix is explicitly presented in a separate, dedicated column in the table."
+                        },
+                        {
+                            "name": "Indemnity Paid",
+                            "description": "Indemnity Paid represents the actual payments made to the claimant for the loss itself (e.g., wage replacement, settlements, or medical costs). In the main claims table, look for columns labeled 'Indemnity Paid', 'Loss Paid', 'Paid Loss', or 'Benefits Paid'. If the table contains columns simply labeled 'Paid' or 'Amount Paid' without distinguishing between \"Indemnity\" and \"Expense,\" extract those values here."
+                        },
+                        {
+                            "name": "Indemnity Reserve",
+                            "description": "Indemnity Reserve (or Outstanding Indemnity) is the amount of money set aside by the insurer to cover future indemnity payments for a claim that has not yet been fully settled. Look for columns labeled 'Indemnity Reserve', 'Indemnity Outstanding', 'O/S Loss', or 'Loss Reserve'. If the table contains columns simply labeled 'Reserve', 'Outstanding', or 'O/S' without distinguishing between \"Indemnity\" and \"Expense,\" extract those values here."
+                        },
+                        {
+                            "name": "Expense Paid",
+                            "description": "Expense Paid (often referred to as ALAE - Allocated Loss Adjustment Expense) covers the costs associated with processing the claim, such as legal fees, medical evaluations, or investigator costs, rather than the loss payment itself. Look for columns labeled 'Expense Paid', 'Allocated Expense', 'ALAE Paid', 'Legal Paid', or 'Exp Paid'. Do not extract values into this field if the column is generically labeled 'Paid' without the word 'Expense' or 'ALAE'."
+                        },
+                        {
+                            "name": "Expense Reserved",
+                            "description": "Expense Reserved is the estimated future cost for claim-related expenses (like legal or adjustor fees) that have not yet been paid. Look for columns labeled 'Expense Reserve', 'Expense O/S', 'O/S ALAE', 'ALAE Reserve', or 'Exp Reserve'. Do not extract values into this field if the column is generically labeled 'Reserve' or 'Outstanding' without the word 'Expense' or 'ALAE'."
+                        },
+                        {
+                            "name": "Recovery Salvage Subro Reins",
+                            "description": "Recovery (Salvage, Subrogation, Reinsurance), this field captures the sum of all recoveries made by the insurer, which may be listed across separate columns. Locate columns labeled 'Salvage', 'Subrogation', 'Subro', 'Reinsurance Recovered', 'Rein', or 'Other Recoveries'.\nIf these are listed as separate columns for a single claim, add the values together to provide a single total recovery amount.\nIf a value is presented in parentheses (e.g., (500.00)) or with a minus sign (e.g., -500.00), it indicates a credit or recovery. Extract these with the negative symbol (e.g., -500.00)\nEnsure the output is a numerical value. If no recovery values are present for a claim, return 0.00. Preserve Currency Symbol"
+                        },
+                        {
+                            "name": "Recovery Deductible",
+                            "description": "Recovery (Deductible) represents the portion of the loss that the insured party is responsible for paying back to the insurer, or the amount the insurer has recovered from the insured’s deductible. Look for columns specifically labeled 'Deductible', 'Ded', 'Deductible Recovery', 'Ded Rec', or 'Insured Reimbursement'. In some documents, this may be listed as a separate line item or a specific \"Deductible\" column within the financial section of the claims table."
+                        },
+                        {
+                            "name": "Claimant Name",
+                            "description": "The Claimant Name is the name of the person or entity making a claim against the policyholder. Claimant Name is the party that suffered a loss or injury. \nNever extract value labelled as 'Named Defendant', 'Defendant Name', 'First Named Insured ' or 'First Name Insured'.\nCheck if there is a dedicated column labelled, 'Claimant Company' 'Claimant', 'Name of Claimant', 'Injured Worker', or 'Patient Name'. Look for proper nouns following phrases like 'Claimant is…', 'Injury to…'. If not found, return 'N/A'. \nDo not extract name of defendant."
+                        },
+                        {
+                            "name": "Policy Number",
+                            "description": "Policy Number is the unique alphanumeric identifier assigned by an insurance carrier to a specific insurance contract. It serves as the primary \"ID card\" for the policyholder's coverage. Look specifically in the top header section of the document. Do not confuse it with the Claim Number. Locate column labelled as 'Policy Number' and extract all policies."
+                        },
+                        {
+                            "name": "Claim Total",
+                            "description": "The Claim Total represents the total financial cost of a single, individual claim. It is the cumulative sum of all payments and reserves (Paid plus Reserves/Outstanding) for that specific claim.\nLook for explicit headers such as Total Incurred, Incurred, Net Incurred, Gross Incurred, Incurred Amount, Claim Total, Total Claim, Total Cost, Total Claim Cost, Total Paid and Outstanding, Outstanding and Paid, Gross Claim Cost, or Total Loss Amount.\n \n- Do not extract from policy-level aggregate rows such as Policy Total, Policy Year Total, Policy Year Incurred, or Policy Subtotal.\n- Do not extract from account-level summaries such as Grand Total, Total All Years, or Account Total.\n- Do not extract intermediate sub-elements like Paid only, Reserve only, or Expense only, unless they are explicitly labeled as the sole total incurred value.\n- Do not confuse this with Policy Limits or Deductibles.\n \nExtract only the numeric monetary value. If the value is not explicitly found, return N/A."
+                        }
+                    ],
+                    "prompt_settings": {
+                        "enable_long_table": false
+                    }
+                },
+                {
+                    "id": "407590",
+                    "name": "Table",
+                    "data_type": "TEXT",
+                    "type": "udf",
+                    "lines": [
+                        {
+                            "line_type": "UDF",
+                            "function_id": "21099",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407590",
+                                    "line_index": 0
+                                }
+                            ]
+                        },
+                        {
+                            "line_type": "UDF",
+                            "function_id": "21100",
+                            "function_args": [
+                                {
+                                    "name": "previous_line",
+                                    "data_type": "LINE",
+                                    "field_id": "407590",
+                                    "line_index": 1
+                                }
+                            ]
+                        }
+                    ],
+                    "prompt": "",
+                    "description": "",
+                    "model_type": "DEFAULT",
+                    "field_visibility": "VISIBLE",
+                    "function_id": "18301",
+                    "function_args": [
+                        {
+                            "name": "Claim__Details__Basic",
+                            "data_type": "FIELD",
+                            "field_id": "407588"
+                        },
+                        {
+                            "name": "Claim_Financial_Details",
+                            "data_type": "FIELD",
+                            "field_id": "407589"
+                        },
+                        {
+                            "name": "Valuation_Date",
+                            "data_type": "FIELD",
+                            "field_id": "407585"
+                        },
+                        {
+                            "name": "Policy_Claim_Details",
+                            "data_type": "FIELD",
+                            "field_id": "407586"
+                        },
+                        {
+                            "name": "Key_Fields",
+                            "data_type": "FIELD",
+                            "field_id": "443011"
+                        }
+                    ],
+                    "prompt_schema": null,
+                    "prompt_settings": {}
+                }
+            ]
+        }
+    }
+}
