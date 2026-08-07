@@ -11,6 +11,60 @@ uv run python -m lossrun.cli score out_qa/direct_calls/*/ --influence
 Companion to [CHALLENGES.md](CHALLENGES.md), which covers constraints of the
 pipeline. This covers the documents.
 
+## The most serious defect found: rows silently collapsed by the merge key
+
+**A document with no claim-number column loses every row but one, and says
+nothing about it.**
+
+`CAU Loss Runs 2016-2021.PDF` is one page carrying 20 claims. The extraction read
+**all 20 correctly** — the raw rows are right, with the correct loss dates and
+amounts. One row shipped.
+
+The merge key is `(Policy Number, Claim Number, Claimant Name)`. This document
+prints no claim number and no claimant; every claim sits under one policy. So all
+20 rows normalize to the same key:
+
+```
+('b1t9180y', '', '')          <- 20 rows, 1 distinct key
+```
+
+`merge_rows` keeps the first row per key and discards the rest. 19 claims,
+including a $92,839 loss and a $10,906 loss, never reached the table.
+
+**It is silent.** `merge_rows` does record what it dropped — `MergeResult` carries
+`duplicate_keys` and a `Conflict` per discarded value — but `finalize_rows`
+returns only `rows` and throws that away, so none of it reaches the Issues sheet.
+That run's Issues sheet is empty. Nothing in the workbook, the ledger or the
+console says 19 rows were lost.
+
+Measured across every run scored here:
+
+| Document | Rows extracted | Rows shipped | Lost | Golden |
+| --- | --- | --- | --- | --- |
+| `CAU Loss Runs 2016-2021.PDF` | 20 | 1 | **19** | 20 |
+| `2017-22 CIC Pkg Loss Runs.PDF` | 21 | 16 | **5** | 21 |
+
+24 rows, and both documents are recent additions — the original five all carry
+claim numbers, which is why this never showed up before.
+
+**Fix, in order of urgency:**
+
+1. **Surface it.** `finalize_rows` already has the evidence; pass
+   `MergeResult.duplicate_keys` and its conflicts to the caller and write them
+   into Issues. Silent row loss is worse than the loss itself. This is a small,
+   safe change.
+2. **Fall back on the key.** When a document carries no claim number, the key has
+   to include something that distinguishes the rows — accident date plus amount
+   would separate all 20 here. Layout discovery already reports
+   `absent_columns`, so the pipeline knows when it is in this situation before
+   extraction starts.
+3. **Refuse to ship a collapse.** A merge that turns 20 rows into 1 is never
+   correct; it should fail the document rather than deliver one row as though it
+   were the whole table.
+
+Not fixed in this branch: changing the merge key mid-measurement would make the
+runs in this document incomparable. It is the first thing to do next.
+
 ## Bottom line
 
 - **Half of all wrong cells are omissions, not misreads** — 148 of 305 are cells
