@@ -1,0 +1,42 @@
+{
+  "present_columns": {
+    "Claim Number": "Policy Number / Claim Number",
+    "Claimant Name": "Claimant Name / Claim Description",
+    "Description": "Claimant Name / Claim Description",
+    "Claim Status": "Date of Loss / Status",
+    "Accident Date": "Date of Loss / Status",
+    "Closed Date": "Date of Loss / Status",
+    "Loss State": "Risk Location",
+    "Policy Number": "Policy Number / Claim Number",
+    "Indemnity Paid": "Paid Loss (Indemnity)",
+    "Indemnity Reserve": "Reserves / Recoveries*",
+    "Expense Paid": "Paid Expenses",
+    "Recovery Salvage Subro Reins": "Reserves / Recoveries*",
+    "Claim Total": "Gross Incurred / Net Incurred",
+    "Valuation Date": "Report as of",
+    "Line of Business": "LOB",
+    "Policy Effective Date": "Effective Date",
+    "Policy Expiration Date": "Policy Period",
+    "Policy Year": "Policy Period",
+    "Policy Total": "Net Incurred",
+    "Insured": "ACCOUNT:"
+  },
+  "absent_columns": [
+    "Report Date",
+    "Expense Reserved",
+    "Recovery Deductible",
+    "Occurrence ID",
+    "Insurer Loss Run"
+  ],
+  "policy_number_placement": "column",
+  "row_granularity": "One row per claim coverage segment, with separate rows possible for the same claim number by coverage type.",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$1,234.56",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "DREAMWORKS REMODELING LLC",
+    "Valuation Date": "Jan 5, 2023",
+    "Insurer Loss Run": "N/A"
+  },
+  "notes": "The LOSS RUN DETAIL header repeats on continuation pages. Policy number and claim number share one column, and policy period is shown as a two-line date range. Date of Loss and claim status/closed date share one column, with the closed date positioned below CLOSED. Claimant name and coded claim description share one column; Accident Description is a separate narrative column. Financial fields use combined headers, including Reserves / Recoveries* and Gross Incurred / Net Incurred. The LOSS RUN SUMMARY on page 1 contains policy-period/LOB aggregate values, including Net Incurred. Detail rows use multi-line layouts, and Risk Location contains full addresses from which the state can be identified."
+}

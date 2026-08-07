@@ -98,7 +98,7 @@ carries agent-loop tokens a direct call never pays for.
 | **3 Merge** | Dedupe seams, fill gaps, record conflicts |
 | **Post-process** | Dates → `MM/DD/YYYY`, money → decimal |
 | **4 QA** | One call per chunk carrying that chunk's pages again plus the rows read from them. Reports wrong cells and what the document prints instead, and claims it found on the page but not in the table. On by default |
-| **4b Apply** | A correction lands only if its value occurs in the PDF text layer; otherwise it is reported and the extracted value stands. Clearing a cell to `N/A` needs no proof — it removes a value rather than adding one. Missing rows are flagged, never added |
+| **4b Apply** | A correction lands only if its value occurs in the PDF text layer; otherwise it is reported and the extracted value stands. Deleting a value is held to the same proof as replacing one. Missing rows are flagged, never added |
 | **Verify** | Every key must appear verbatim in the PDF text layer |
 | **5 Score** | Match to golden on claim number — per column and per model, under a `ScoringPolicy` whose every assumption can be switched off and measured |
 | **Outputs** | `out/<route>_calls/<doc>_<timestamp>/`, that route's `telemetry.xlsx`, and a per-batch `initial_results/v<n>_<date>_<time>.xlsx` |

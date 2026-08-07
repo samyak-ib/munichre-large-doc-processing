@@ -507,8 +507,12 @@ def test_a_correction_the_document_does_not_support_is_reported_not_applied(tmp_
     assert "qa_unverified" in _issue_categories(outcome.workbook)
 
 
-def test_clearing_an_invented_value_needs_no_proof(tmp_path, stub_client):
-    """`N/A` removes a value rather than introducing one, so it cannot hallucinate."""
+def test_a_proposal_to_clear_a_cell_is_reported_not_applied(tmp_path, stub_client):
+    """Deleting a value is held to the same proof as replacing one.
+
+    Measured over the five golden documents, unproven clearings were the only
+    thing this stage got wrong — see docs/CHALLENGES.md #22.
+    """
     stub_client(
         qa_payload=_qa_finding(
             ("P-100", "C003", "McAllister, John"), "Indemnity Paid", "N/A"
@@ -521,9 +525,11 @@ def test_clearing_an_invented_value_needs_no_proof(tmp_path, stub_client):
         pdf, config=make_config(tmp_path), out_dir=tmp_path / "out", log=lambda *_: None
     )
 
-    assert outcome.qa_applied == 1
+    assert outcome.qa_findings == 1
+    assert outcome.qa_applied == 0
     row = next(r for r in _final_table(outcome.workbook) if r["Claim Number"] == "C003")
-    assert row["Indemnity Paid"] == "N/A"
+    assert row["Indemnity Paid"] == "1200"
+    assert "qa_unverified" in _issue_categories(outcome.workbook)
 
 
 def test_a_row_the_review_found_on_the_page_is_flagged_not_added(tmp_path, stub_client):

@@ -170,7 +170,9 @@ Rows are matched to chunks positionally, by walking the pre-merge rows in merge 
 
 The reviewer returns two things: cells it believes are wrong, each with the value it says the document prints, and claims it found on the page but not in the table.
 
-**The guard.** Adjudication could not invent a value because it could only pick between two candidates. A reviewer has no such limit, so the constraint moves to the point of application: a proposed correction is written into the table **only when that value occurs in the document's own text layer**, whitespace and case ignored. Anything unconfirmed is logged as `qa_unverified` and the extracted value stands. The single carve-out is a correction to `N/A` — clearing a cell removes a value rather than introducing one, so it cannot be a hallucination, and an invented figure is what the stage exists to catch.
+**The guard.** Adjudication could not invent a value because it could only pick between two candidates. A reviewer has no such limit, so the constraint moves to the point of application: a proposed correction is written into the table **only when that value occurs in the document's own text layer**, whitespace and case ignored. Anything unconfirmed is logged as `qa_unverified` and the extracted value stands.
+
+Deleting a value is held to the same bar. An early version exempted a correction to `N/A`, reasoning that removing a value cannot invent one — measurement over the five golden documents showed it was the only harm the stage did, so the exemption was removed. See [CHALLENGES.md](CHALLENGES.md) #22.
 
 Applied values go through `cleaning.clean_value` before they are written, so a correction copied off the page as `$1,200.00` lands in the table as `1200` like every other amount.
 
@@ -178,7 +180,7 @@ Rows reported missing are **flagged, never added** — reconstructing a full 25-
 
 Findings land in the Issues sheet: `qa_corrected` at info as an audit trail, `qa_unverified` and `qa_row_missing` at warning — those are the cells a human should read.
 
-> ⚠️ The guard is only as good as the text layer. A scanned document has none, so on exactly the files where a second look at the page is worth most, every finding is reported and none is applied. See [CHALLENGES.md](CHALLENGES.md) #22.
+> ⚠️ The guard is only as good as the text layer. A scanned document has none, so on exactly the files where a second look at the page is worth most, every finding is reported and none is applied. Measured: 39 findings on `Loss Run_Report.pdf`, 0 applicable. See [CHALLENGES.md](CHALLENGES.md) #23.
 
 ### Stage 5 — Output (`report.py`)
 

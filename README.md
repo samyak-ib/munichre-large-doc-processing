@@ -142,15 +142,20 @@ the cells it believes are wrong along with what the document prints instead.
 A correction is written into the final table **only when the value it proposes
 occurs in the document's own text layer**. That guard is what keeps a reviewer
 that can invent a value from putting one in the deliverable — anything it cannot
-prove is logged as `qa_unverified` and the extracted value stands. The one
-exception is a correction to `N/A`: clearing a cell removes a value rather than
-introducing one, so it needs no proof, and an invented figure is exactly what the
-stage exists to catch.
+prove is logged as `qa_unverified` and the extracted value stands. Deleting a
+value is held to the same bar as replacing one: an early version exempted
+corrections to `N/A`, and measurement showed that was the only harm the stage
+did (CHALLENGES #22).
 
-The cost of that guard is a scanned document, which has no text layer for the
-check to consult — every finding is reported there and none applied. `qa_row_missing`
-lists claims the review found on the page but not in the table; they are reported,
-never added.
+The cost of the guard is a scanned document, which has no text layer for the
+check to consult — every finding is reported there and none applied (CHALLENGES
+#23; on `Loss Run_Report.pdf` that was 39 findings and 0 applicable).
+`qa_row_missing` lists claims the review found on the page but not in the table;
+they are reported, never added.
+
+Measured over the five golden documents: **+3 cells against the same extraction
+unreviewed**, and level with the consensus route it replaces at a fraction of the
+calls. See CHALLENGES #22 for the numbers and their error bars.
 
 ```yaml
 qa:

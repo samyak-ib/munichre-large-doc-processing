@@ -54,10 +54,12 @@ qa:
   #
   # A correction is written into the final table only when the value it proposes
   # occurs in the document's own text layer, so a QA hallucination can never
-  # reach the deliverable. Anything unconfirmed is reported in the Issues sheet
-  # and the extracted value stands. The consequence is that a scanned document
-  # with no text layer gets a review it cannot act on — every finding is
-  # reported, none applied. See docs/CHALLENGES.md #21.
+  # reach the deliverable. That includes a correction to N/A: deleting a value
+  # is held to the same proof as replacing one, because measurement showed
+  # unproven deletions were the only harm this stage did. Anything unconfirmed
+  # is reported in the Issues sheet and the extracted value stands, which means
+  # a scanned document with no text layer gets a review it cannot act on.
+  # See docs/CHALLENGES.md #22 and #23.
   enabled: true
   # Which model reviews. Empty means the primary model, which is the shipped
   # setup: this stage checks a transcription against the page rather than

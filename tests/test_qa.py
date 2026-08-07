@@ -110,13 +110,19 @@ def test_a_document_with_no_text_layer_can_confirm_nothing():
     assert decisions[0].verdict == UNVERIFIED
 
 
-def test_clearing_a_cell_needs_no_proof():
-    """`N/A` takes a value away rather than adding one, so it cannot invent."""
+def test_clearing_a_cell_is_held_to_the_same_bar():
+    """Deleting a value is not the safe operation it looks like.
+
+    An earlier version let `N/A` through unproven, reasoning that removing a
+    value cannot invent one. Over the five golden documents that was the only
+    harmful thing the stage did — on the scanned file it was the only kind of
+    correction applicable at all, and all six deleted a value golden agreed with.
+    """
     rows = [row()]
     decisions = [finding(column="Indemnity Paid", proposed="N/A", claimant="McAllister, John")]
-    assert qa.apply(rows, decisions, [PAGE_TEXT], SCHEMA) == 1
-    assert rows[0]["Indemnity Paid"] == "N/A"
-    assert decisions[0].verdict == APPLIED
+    assert qa.apply(rows, decisions, [PAGE_TEXT], SCHEMA) == 0
+    assert rows[0]["Indemnity Paid"] == "1200", "the extracted value stands"
+    assert decisions[0].verdict == UNVERIFIED
 
 
 def test_a_correction_naming_an_unknown_row_changes_nothing():

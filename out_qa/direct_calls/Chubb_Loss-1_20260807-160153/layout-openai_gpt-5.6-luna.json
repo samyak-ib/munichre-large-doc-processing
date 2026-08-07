@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Reference #",
+    "Claimant Name": "Claimant Name:",
+    "Description": "Loss Description:",
+    "Claim Status": "Claim Status",
+    "Accident Date": "Loss Date",
+    "Report Date": "Reported Date",
+    "Closed Date": "Close Date",
+    "Loss State": "Loss Location",
+    "Occurrence ID": "Claim/Occurrence #",
+    "Policy Number": "Policy #",
+    "Indemnity Paid": "Losses Paid",
+    "Indemnity Reserve": "Loss Reserve",
+    "Expense Paid": "Expenses Paid",
+    "Expense Reserved": "Expense Reserve",
+    "Recovery Salvage Subro Reins": "Recovery",
+    "Recovery Deductible": "Deductible Amount",
+    "Claim Total": "Total Incurred",
+    "Valuation Date": "Current As of Date",
+    "Line of Business": "Claim Type",
+    "Policy Effective Date": "Policy Term",
+    "Policy Expiration Date": "Policy Term",
+    "Policy Year": "Policy Term",
+    "Insurer Loss Run": "Writing Company:",
+    "Policy Total": "Total Incurred",
+    "Insured": "Insured Name:"
+  },
+  "absent_columns": [],
+  "policy_number_placement": "column",
+  "row_granularity": "one claim/occurrence",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$1,234 or $0",
+  "table_starts_on_page": 2,
+  "document_values": {
+    "Insured": "WESLACO I.S.D.",
+    "Valuation Date": "06/19/2018",
+    "Insurer Loss Run": "FEDERAL INSURANCE COMPANY"
+  },
+  "notes": "The loss run summary begins on page 1, while the individual claim detail table begins on page 2. The page 2 header repeats the document header and detail-column labels. Each claim is presented as a multiline row: policy number, claim reference number, claim/occurrence number, and claimant number are stacked; policy term, policy type, claim status, claim type, loss date, loss location, reported date, and close date are also arranged in paired multiline fields. Claimant Name, Loss Description, and Writing Company appear beneath each claim row. A policy-level summary Total Incurred is shown on page 1 and should not be confused with the individual claim-row Total Incurred."
+}

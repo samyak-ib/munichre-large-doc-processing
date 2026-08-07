@@ -1,0 +1,40 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number",
+    "Claimant Name": "Claimant Name",
+    "Description": "Loss Description / Description Of Loss",
+    "Claim Status": "Claim Status / Open/Closed",
+    "Accident Date": "Loss Date / Loss Date:",
+    "Report Date": "Report Date / Report Date / Time:",
+    "Indemnity Paid": "Paid Losses / Loss Paid",
+    "Indemnity Reserve": "Reserve / Loss Reserve / Case Reserves Loss",
+    "Expense Paid": "Paid Expenses / Expense Paid",
+    "Expense Reserved": "Expense Reserve / Case Reserves Expense",
+    "Claim Total": "Net Incurred / Gross Incurred / Total Incurred / Total Loss + Exp",
+    "Valuation Date": "As Of / Valuation Date:",
+    "Line of Business": "Claim Type",
+    "Policy Effective Date": "Eff Date / Effective Date / Policy Term:",
+    "Policy Expiration Date": "Exp Date / Exp Date / Policy Term:",
+    "Policy Year": "Current Policy Period / Policy Term",
+    "Insurer Loss Run": "CNA / Catalytic Risk Managers / AIG Loss Run",
+    "Policy Total": "Total for Contract# / Policy Total: / TOTAL"
+  },
+  "absent_columns": [
+    "Closed Date",
+    "Loss State",
+    "Occurrence ID",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible"
+  ],
+  "policy_number_placement": "column",
+  "row_granularity": "one row per individual claim or reported loss",
+  "date_format": "M/D/YYYY and MM/DD/YYYY",
+  "currency_format": "$0, $1,912, $0.00, $3,200.68, or amounts without a currency symbol such as 70,254",
+  "table_starts_on_page": 2,
+  "document_values": {
+    "Insured": "Friendswood Independent School District; FRIENDSWOOD INDEPENDENT SCHOOL DISTRICT; FRIENDSWOOD INDEPENDENT SCHOOL",
+    "Valuation Date": "12/04/2020; 11/30/2020",
+    "Insurer Loss Run": "Catalytic Risk Managers; CNA; AIG"
+  },
+  "notes": "The document contains multiple carrier report sections with different layouts and valuation dates. The Catalytic section uses Contract # and has contract-level and insured-level total rows. The CNA claim table uses a repeated two-line header and two-line claim layout; its headers repeat on the continuation page. Policy-level totals appear as Total for Contract#, TOTAL, or Policy Total:. The AIG section begins with a cover/header page and places policy numbers in the document header; its detailed claim table continues beyond the supplied pages."
+}

@@ -13,7 +13,8 @@ Companion to [APPROACH.md](APPROACH.md).
 - **The second extraction pass is gone.** Consensus measured agreement, not accuracy, and cost a full second read to produce it. A QA review of the single extraction audits every cell rather than only the contested ones, for one call per chunk. The consensus implementation is preserved on the `consensus-route` branch.
 - **The largest remaining errors were structural, not transcription.** Three columns returned `N/A` because the value was somewhere the extraction pass never looked, and one read the wrong column entirely. Prompt guidance addresses all four — and that guidance was written from five documents, which bounds how far it generalises.
 - **The scoring rules are themselves assumptions**, each measurable and each reported with what it is worth.
-- **The QA review can only fix what the text layer confirms.** That guard is what stops it inventing a value, and it goes silent on exactly the scanned documents where a second look at the page is worth most.
+- **The QA review is accuracy-neutral and operationally much cheaper**: level with the consensus route on the five golden documents, at 15 API calls against 421 and a third of the wall clock. The accuracy difference is smaller than the run-to-run noise, so "level" is the claim, not "better".
+- **The QA guard can only fix what the text layer confirms**, which stops it inventing a value and goes silent on exactly the scanned documents where a second look at the page is worth most.
 - **The SuperApp endpoint times out on concurrent uploads**, well below its documented body cap. Working around it costs wall clock, and it is the reason request-size ceilings are set per provider rather than per model.
 - **Cost figures carry two known error sources**: operator-maintained prices, and one price per pin serving two routes that do not charge the same.
 - **The measurement route matters.** Reaching a model through SuperApp adds agent-loop tokens, reports no usage at all for Gemini, and can silently substitute a different model. Calling the vendor directly avoids all three, which is why it is the default and SuperApp is the fallback.
@@ -234,7 +235,37 @@ The failure needs a lost response rather than a lost request, so it is not the c
 
 **Until then:** a run's cost is an upper bound whenever `attempt > 1` appears in the ledger — the `attempt` column on each call is how to spot it.
 
-### 22. The QA guard is only as good as the text layer
+### 22. The QA route, measured against the consensus route it replaced
+
+Batch `3740ef65`, 2026-08-07, five golden documents (92 claim rows), Luna at `max` effort extracting and reviewing. Compared against batch `36c630dd`, the last consensus run on the same documents.
+
+| | Consensus (shipped) | QA route (shipped) |
+| --- | --- | --- |
+| Row recall | 89/92 — 96.7% | 88/92 — 95.7% |
+| Cell accuracy | 1585/1897 — **83.55%** | 1570/1875 — **83.73%** |
+| API calls | 421 | **15** |
+| Wall clock | 108.7 min | **39.7 min** |
+| Cost | $0.4267 | $0.3857 |
+
+**The accuracy difference is inside the noise.** Extraction is unstable run to run (#1), and the instability is larger than the effect: `LRs_Application` carries 60% of the scored cells and returned 93.0% in the consensus run against 88.5% here, at identical settings. That single swing is ~50 cells; the whole QA effect is 6. Read the table as *no measurable accuracy change*, not as an improvement — one run per configuration cannot support more.
+
+What is not inside the noise is the cost of getting there: **28× fewer calls and a third of the wall clock**, because 399 of the consensus run's calls were per-cell adjudications. On `LRs_Application` alone that was 276 calls and 81 minutes.
+
+**What QA itself contributed** is measurable without the cross-run confound, by rescoring the same run's `Raw Rows` (which are pre-QA) against its shipped table:
+
+| | Cells | Accuracy |
+| --- | --- | --- |
+| Extraction alone | 1573/1875 | 83.89% |
+| + QA as first built | 1570/1875 | 83.73% |
+| + QA, deletions proved too | 1576/1875 | **84.05%** |
+
+The stage applied 14 corrections. Ten were deletions to `N/A`, admitted without proof by a carve-out that reasoned removing a value cannot invent one. On the scanned `Loss Run_Report.pdf` those were the *only* corrections applicable at all, and all six deleted a `Description` that golden agreed with — `TRIP AND FALL`, `SLIP AND FALL`, `AUTO DAMAGE`. The carve-out was removed; deletions are now held to the same proof as replacements.
+
+The four proven replacements were good. Two fixed `Loss-4.pdf` outright (88.9% → 100%). Two more caught a real schema violation on `Loss_2.pdf`: `Valuation Date` had come back as `12/04/2020; 11/30/2020`, two dates joined into one cell, which the column spec explicitly forbids.
+
+**Ponder:** the honest state is that QA is roughly free accuracy-wise and much cheaper operationally. To claim more, run each configuration three times and compare distributions — #1 says a single run cannot separate a 6-cell effect from a 50-cell swing.
+
+### 23. The QA guard is only as good as the text layer
 
 A correction the review proposes is written into the table only when that value occurs in the document's text layer. That is what keeps a reviewer that can invent a value from putting one in the deliverable, and it inherits #9's limitation exactly: a scanned loss run has no text layer, so **every finding on such a document is reported and none is applied**.
 

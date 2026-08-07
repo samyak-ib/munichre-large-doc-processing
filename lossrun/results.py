@@ -120,8 +120,11 @@ STANDING_CAVEATS = (
         "the value it proposes occurs in the document's own text layer. That is "
         "what stops a confident-sounding invention from reaching the deliverable, "
         "and it has a cost: on a scanned document there is no text layer, so every "
-        "finding is reported and none is applied. The Issues sheet's "
-        "`qa_unverified` rows are where that shows up.",
+        "finding is reported and none is applied — 39 findings and 0 applicable on "
+        "Loss Run_Report.pdf. The Issues sheet's `qa_unverified` rows are where "
+        "that shows up. Measured over these five documents the stage is worth "
+        "+3 cells against the same extraction unreviewed, which is inside the "
+        "run-to-run noise of the extraction itself.",
     ),
     (
         "Golden is the arbiter, and it is a small sample",

@@ -14,9 +14,14 @@ against the document's own text layer before it is written: a correction lands
 only when the value it proposes actually occurs in the document. Anything QA
 cannot prove is reported and the extracted value stands.
 
-The one carve-out is clearing a cell. A proposal of `N/A` removes a value rather
-than introducing one, so it cannot be a hallucination and needs no proof — which
-matters, because an invented figure is the failure this stage exists to catch.
+There is no exemption for clearing a cell. A proposal of `N/A` looks safe on the
+argument that it removes a value rather than introducing one, and an early
+version let it through unproven for that reason. Measured over the five golden
+documents it was the only harmful thing this stage did: ten of the fourteen
+corrections applied were clearings, they were the only kind applicable at all on
+the scanned document, and all six there deleted a value golden agreed with. Held
+to the same bar as every other correction, the stage moves from -3 cells to +3.
+See docs/CHALLENGES.md #22.
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from .chunking import Chunk
-from .cleaning import NA, clean_value
+from .cleaning import clean_value
 from .jsonparse import first_json_object, strip_fences
 from .merge import is_empty, normalize_key
 from .prompts import qa_instructions, qa_prompt
@@ -181,18 +186,18 @@ def apply(
             continue
 
         current = row.get(finding.column, "")
-        if is_empty(finding.proposed_value):
-            # Clearing a cell removes a value rather than introducing one, so it
-            # cannot be a hallucination and needs no text-layer proof.
-            value = NA
-        elif appears_verbatim(finding.proposed_value, haystack):
-            value = clean_value(finding.column, finding.proposed_value)
-        else:
-            finding.current_value = current
+        finding.current_value = current
+        # Every correction is held to the same bar, including one that clears a
+        # cell. Clearing looked safe on the argument that it removes a value
+        # rather than introducing one — measured, it was the opposite: on the
+        # scanned document it was the only kind of correction that could be
+        # applied at all, and all six deleted a value golden agreed with.
+        if is_empty(finding.proposed_value) or not appears_verbatim(
+            finding.proposed_value, haystack
+        ):
             finding.verdict = UNVERIFIED
             continue
-
-        finding.current_value = current
+        value = clean_value(finding.column, finding.proposed_value)
         if value == current:
             finding.verdict = NO_CHANGE
             continue

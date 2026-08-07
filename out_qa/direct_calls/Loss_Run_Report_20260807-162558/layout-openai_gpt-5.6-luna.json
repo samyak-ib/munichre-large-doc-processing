@@ -1,0 +1,42 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number",
+    "Claimant Name": "Claimant Name",
+    "Claim Status": "Status",
+    "Accident Date": "Accident Date",
+    "Report Date": "Notice Date",
+    "Closed Date": "Close Date",
+    "Policy Number": "Policy Number(s)",
+    "Indemnity Paid": "Loss Paid",
+    "Expense Paid": "Expense Paid",
+    "Claim Total": "Incurred",
+    "Valuation Date": "Losses as of",
+    "Line of Business": "Claim Type",
+    "Policy Effective Date": "Cov Eff Date",
+    "Policy Expiration Date": "Cov Exp Date",
+    "Insurer Loss Run": "TRAVELERS",
+    "Policy Total": "Subtotals for Policy Number",
+    "Insured": "Insured"
+  },
+  "absent_columns": [
+    "Description",
+    "Loss State",
+    "Occurrence ID",
+    "Indemnity Reserve",
+    "Expense Reserved",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible",
+    "Policy Year"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "The summary table has one row per policy coverage year; the detail loss table has one row per individual claim.",
+  "date_format": "M/D/YYYY and MM/DD/YYYY",
+  "currency_format": "$40,939.00",
+  "table_starts_on_page": 3,
+  "document_values": {
+    "Insured": "NEW HANOVER COUNTY AIRPORT AUTHORITY",
+    "Valuation Date": "02/16/2020",
+    "Insurer Loss Run": "TRAVELERS"
+  },
+  "notes": "The report contains a coverage/policy summary followed by Detail Loss Report sections. The summary includes policy-year rows, including rows marked No Claims. Detail sections repeat the header with Claimant, Adj Off, FP, Claim Number, Accident Date, Notice Date, Close Date, O/C, Total, Claim, Medical, and Expense. Policy Number(s) appears above each detail claim group rather than as a detail-table column. Detail sections include subtotals for policy number, policy effective date, and line of insurance, followed by report grand totals. Continuation pages repeat the detail header and retain the policy number from the block header."
+}
