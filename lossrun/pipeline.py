@@ -27,7 +27,9 @@ from .verify import NOT_FOUND, verify_keys
 
 RAW_ROW_META = ("model", "chunk", "pages")
 
-DEFAULT_GOLDEN_PATH = Path("goldens/Loss Runs GTs.xlsx")
+# The extended golden set: sheet 1 is the original five documents, sheet 2 the
+# twenty-four added later. Both sheets are read — see `accuracy.load_golden`.
+DEFAULT_GOLDEN_PATH = Path("goldens/Loss Runs GTs (1).xlsx")
 
 # Loss-run filenames arrive with spaces, GUIDs and punctuation; keep them
 # recognisable but path-safe, and short enough to stay clickable.

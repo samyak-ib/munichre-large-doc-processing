@@ -1,0 +1,42 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim number:",
+    "Claimant Name": "Claimant(s)",
+    "Description": "Loss description:",
+    "Claim Status": "Status:",
+    "Accident Date": "Loss date:",
+    "Closed Date": "Close date:",
+    "Indemnity Reserve": "Outstanding loss reserve",
+    "Claim Total": "Claim total",
+    "Line of Business": "Line of business:",
+    "Policy Number": "Policy number:",
+    "Valuation Date": "Report as of:",
+    "Policy Effective Date": "Policy tenure:",
+    "Policy Expiration Date": "Policy tenure:",
+    "Policy Year": "Policy period",
+    "Insured": "Policyholder name:",
+    "Insurer Loss Run": "encova INSURANCE",
+    "Policy Total": "Term total"
+  },
+  "absent_columns": [
+    "Report Date",
+    "Loss State",
+    "Occurrence ID",
+    "Indemnity Paid",
+    "Expense Paid",
+    "Expense Reserved",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible"
+  ],
+  "policy_number_placement": "document_header",
+  "row_granularity": "one claim block, with claimant subrows and a claim total",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$ 1,234.56; zero amounts are shown as $ -",
+  "table_starts_on_page": 2,
+  "document_values": {
+    "Insured": "LEGACY CONSTRUCTION SERVICES LLC",
+    "Valuation Date": "06/30/2022",
+    "Insurer Loss Run": "encova INSURANCE"
+  },
+  "notes": "Page 1 contains a Commercial Package Summary. Claim blocks begin on page 2 and continue on subsequent pages, grouped under a repeating Term header. Each claim block contains Claim number, Line of business, Loss date, Loss description, Status, Close date, claimant subrows, Outstanding loss reserve, Incurred loss, and Claim total. A policy-period aggregate appears as Term total at the end of the term. The policy number and report header repeat on each page."
+}

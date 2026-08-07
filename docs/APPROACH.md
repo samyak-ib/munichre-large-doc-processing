@@ -319,9 +319,10 @@ Every value is overridable by CLI flag. Nothing branches on a model name outside
 | `lossrun/accuracy.py` | Scoring against golden, and the `ScoringPolicy` flags that make each assumption measurable |
 | `lossrun/rescore.py` | Rebuilds a finished run's tables from its own workbook, so scoring rules can change without re-running the API |
 | `lossrun/results.py` | The shareable batch workbook written into `initial_results/` |
+| `lossrun/compare.py` | Scores labelled sets of finished runs side by side — accuracy and cost — from the workbooks they already wrote |
 | `lossrun/telemetry.py` | Call ledger and cost model |
 | `lossrun/report.py` | Excel writers and ledger reads |
-| `lossrun/cli.py` | `extract`, `score`, `results`, `check`, `schema` |
+| `lossrun/cli.py` | `extract`, `score`, `results`, `compare`, `check`, `schema` |
 
 ## Authentication
 

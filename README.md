@@ -8,6 +8,7 @@ API, with no dependency on the monorepo.
 - [docs/APPROACH.md](docs/APPROACH.md) — the pipeline, chunking logic, column hints, and config contract
 - [docs/PIPELINE.md](docs/PIPELINE.md) — the flow end to end, and where each decision came from
 - [docs/CHALLENGES.md](docs/CHALLENGES.md) — known constraints and open questions
+- [docs/mistakes.md](docs/mistakes.md) — why accuracy is lower on some documents, with the numbers behind each cause
 
 ## Setup
 
@@ -48,7 +49,14 @@ uv run lossrun extract samples/loss_run.pdf   # extract one document
 uv run lossrun extract samples/a.pdf samples/b.pdf   # several — one batch, one report
 uv run lossrun score out/a_2026*  --influence  # re-score offline, no API calls
 uv run lossrun results out/a_2026* out/b_2026*  # write the shareable report
+uv run lossrun compare a=out/direct_calls b=out_qa/direct_calls   # cost + accuracy, side by side
 ```
+
+`compare` scores two or more labelled sets of finished runs against each other —
+what shipped, what it cost, and the per-document delta. It reads the workbooks
+the runs already wrote, so it costs no API calls and can be rebuilt whenever a
+scoring rule changes. `docs/mistakes.md` is the written-up version of one such
+comparison.
 
 | File | Contents |
 | --- | --- |
@@ -173,14 +181,21 @@ Check these in order:
    middle rows are the failure this pipeline exists to prevent.
 2. **Accuracy** — cell accuracy and row recall per model, with every disagreeing
    cell listed in `Accuracy Mismatches`. This is the number that matters.
-3. **Issues sheet** — `key_not_found` means a claim number or claimant name does
+3. **Accuracy metrics** — four numbers, and they answer different questions:
+   `rows_matched/rows_golden` is how much of the table came back;
+   `row_accuracy_matched_pct` is how correct a typical returned row is, each row
+   counting once; `cell_accuracy_pct` pools every cell, so it leans toward rows
+   carrying more scorable columns; `exact_row_pct` is the share of rows with
+   nothing wrong at all. Telemetry adds input/output cost and tokens per page.
+4. **Issues sheet** — `key_not_found` means a claim number or claimant name does
    not appear verbatim in the document text, which is the hallucination signature.
    `qa_corrected` is the audit trail of what the review changed; `qa_unverified`
    marks a cell the review wanted to change but could not prove, and
    `qa_row_missing` a claim it found on the page but not in the table — those two
    are the cells worth a human's time.
-4. **Telemetry** — cost and token counts for the run. A non-zero
-   `calls_without_usage` means the cost is a lower bound.
+5. **Telemetry** — cost and token counts for the run, split into input and
+   output and divided by page count. A non-zero `calls_without_usage` means the
+   cost is a lower bound.
 
 ## Tests
 

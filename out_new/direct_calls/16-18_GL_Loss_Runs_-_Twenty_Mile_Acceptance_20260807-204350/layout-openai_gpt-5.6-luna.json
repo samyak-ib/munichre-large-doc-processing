@@ -1,0 +1,42 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim #",
+    "Claimant Name": "Claimant",
+    "Description": "Description of Accident",
+    "Claim Status": "Claim Status",
+    "Accident Date": "Date of Loss",
+    "Report Date": "Date Open",
+    "Closed Date": "Date Closed",
+    "Loss State": "Accident State",
+    "Policy Number": "Policy Number",
+    "Indemnity Paid": "Loss Paid",
+    "Indemnity Reserve": "Current Loss Resv",
+    "Expense Paid": "Exp Paid",
+    "Expense Reserved": "Current Exp Resv",
+    "Recovery Salvage Subro Reins": "Salvage Recover; Subro Recover",
+    "Recovery Deductible": "Deduct Recover",
+    "Claim Total": "Gross Incurred",
+    "Valuation Date": "Claims Activity as of",
+    "Policy Effective Date": "Policy Period",
+    "Policy Expiration Date": "Policy Period",
+    "Policy Year": "Policy Period",
+    "Insurer Loss Run": "Carrier Name",
+    "Policy Total": "TOTALS IN PERIOD:",
+    "Insured": "Name of Insured"
+  },
+  "absent_columns": [
+    "Occurrence ID",
+    "Line of Business"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "one row per individual claim",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$1,234.56; negative amounts are written as -$1,234.56",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "CONCEPTUAL MANAGEMENT, INC. DBA TRITON CONSTRUCTION\nCONCEPTUAL MANAGEMENT, INC DBA: TRITON CONSTRUCTION",
+    "Valuation Date": "09/18/2022",
+    "Insurer Loss Run": "Acceptance Indemnity Insurance Company"
+  },
+  "notes": "Each policy block begins with a repeating header containing the Policy Number, Name of Insured, Carrier Name, and Policy Period. Claim details use a multi-line layout: claim identifiers and dates appear above the Description of Accident, followed by the claimant and financial columns. Each claim is followed by a Group Total for Claim No row. Policy-level TOTALS IN PERIOD: and GRAND TOTALS: rows are not individual claims. Page 2 continues with a new policy block and repeats the policy header."
+}
