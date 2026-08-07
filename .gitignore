@@ -1,9 +1,12 @@
 # Credentials — .env.example is the tracked template
 .env
 
-# Run outputs. Per-batch reports in initial_results/ are tracked; the raw
-# per-document run directories under out/ are not.
-out/
+# Run outputs. Per-batch reports (initial_results/, qa_results*/) and the
+# comparison workbooks are tracked; the raw per-document run directories are
+# not — they hold a workbook and a layout per document and are rewritten by
+# every run. The glob covers the whole family, because a run root is named for
+# what it is measuring: out/, out_qa/, out_new/.
+out*/
 
 # Python
 __pycache__/
