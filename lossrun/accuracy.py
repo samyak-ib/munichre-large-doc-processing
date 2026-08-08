@@ -19,6 +19,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 
+from .cleaning import normalize_dashes
 from .merge import is_empty
 from .schema_loader import DATE_COLUMNS, MONEY_COLUMNS, TableSchema
 
@@ -144,7 +145,23 @@ MISMATCH_COLUMNS = ("model", "claim_number", "column", "extracted", "golden")
 _WS_RE = re.compile(r"\s+")
 _PUNCT_RE = re.compile(r"[^a-z0-9]+")
 _MONEY_RE = re.compile(r"[^0-9.\-]")
-_DATE_FORMATS = ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y", "%d/%m/%Y", "%b %d, %Y", "%B %d, %Y")
+# `%d-%b-%y` and its siblings are here for the same reason as in `cleaning`: a
+# document that prints `13-Jul-17` throughout would otherwise score zero on every
+# date column, measuring this parser rather than the extraction.
+_DATE_FORMATS = (
+    "%m/%d/%Y",
+    "%Y-%m-%d",
+    "%m/%d/%y",
+    "%d/%m/%Y",
+    "%b %d, %Y",
+    "%B %d, %Y",
+    "%d-%b-%Y",
+    "%d-%B-%Y",
+    "%d-%b-%y",
+    "%d-%B-%y",
+    "%d %b %Y",
+    "%d %B %Y",
+)
 
 
 @dataclass
@@ -578,7 +595,7 @@ def _as_date(value: str) -> date | None:
     The whole string is tried before the first token, because `Jan 5, 2023`
     contains spaces that matter while `2023-01-05 00:00:00` has a time to drop.
     """
-    text = str(value).strip()
+    text = normalize_dashes(str(value).strip())
     if not text:
         return None
     for candidate in (text, text.split(" ")[0]):
