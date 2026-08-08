@@ -114,6 +114,15 @@ def test_the_day_month_year_family_is_understood():
     assert clean_value("Closed Date", "9-January-2020") == "01/09/2020"
 
 
+def test_hyphenated_two_digit_years_are_read_month_first():
+    """`07-06-21` reached us unparsed and could never match golden. Read
+    month-first, matching the slashed form this codebase already assumes."""
+    from lossrun.cleaning import clean_value
+
+    assert clean_value("Accident Date", "07-06-21") == "07/06/2021"
+    assert clean_value("Accident Date", "12-31-99") == "12/31/1999"
+
+
 def test_the_scorer_reads_the_same_forms_as_the_cleaner():
     """The scorer parses the extracted value directly, so a shipped table that
     already holds `13-Jul-17` still has to compare equal to golden."""

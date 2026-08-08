@@ -41,6 +41,9 @@ _DATE_FORMATS = (
     "%d-%B-%Y",
     "%Y/%m/%d",
     "%m/%d/%y",
+    # Hyphenated two-digit years, read month-first for the same reason the
+    # slashed form is: `07-06-21` is ambiguous, and this codebase is US-first.
+    "%m-%d-%y",
     "%d-%b-%y",
     "%d-%B-%y",
 )
