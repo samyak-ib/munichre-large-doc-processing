@@ -20,7 +20,7 @@ five carry clean claim numbers and conventional dates.
 
 | Defect | Cost, measured | Status |
 | --- | --- | --- |
-| Rows collapsed by the merge key (§ below) | 19 rows on one document, 5 on another | **open** — fix is described, not applied |
+| Rows collapsed by the merge key (§ below) | **31 rows** across three documents; two collapse to a single row | **open** — fix is described, not applied |
 | `13-Jul-17` and `07-06-21` unparseable | 191 cells on one document | **fixed** |
 | Scorer matches on claim number alone | 2 documents scored 0% that are 80% and 91% | **open** — measurement change, deliberately not made mid-run |
 | Composite `claim/occurrence` defeats matching | same 2 documents | **open** |
@@ -56,13 +56,24 @@ console says 19 rows were lost.
 
 Measured across every run scored here:
 
-| Document | Rows extracted | Rows shipped | Lost | Golden |
-| --- | --- | --- | --- | --- |
-| `CAU Loss Runs 2016-2021.PDF` | 20 | 1 | **19** | 20 |
-| `2017-22 CIC Pkg Loss Runs.PDF` | 21 | 16 | **5** | 21 |
+| Document | Rows extracted | Rows shipped | Lost | Golden | Merge key |
+| --- | --- | --- | --- | --- | --- |
+| `CAU Loss Runs 2016-2021.PDF` | 20 | 1 | **19** | 20 | `('b1t9180y', '', '')` |
+| `WCO Loss Runs 2018-2022.PDF` | 8 | 1 | **7** | 8 | `('0196-47556', '', '')` |
+| `2017-22 CIC Pkg Loss Runs.PDF` | 21 | 16 | **5** | 21 | mixed |
 
-24 rows, and both documents are recent additions — the original five all carry
-claim numbers, which is why this never showed up before.
+**31 rows**, and all three documents are recent additions — the original five all
+carry claim numbers, which is why this never showed up before.
+
+Two of the three collapse to a *single* row. A document that returns one row where
+golden holds eight or twenty is not a subtle degradation; it is the pipeline
+silently discarding almost everything it correctly read.
+
+> Not every collapse is a loss. `Reaco - 2022 WC - LR.pdf` shows 24 raw rows
+> merging to 12, and that is the merge working: the model emitted every row twice
+> and deduplication removed them. It scores 12/12 at 95.0%. The distinction is
+> whether the collapsed rows were duplicates or distinct claims, which is exactly
+> what `MergeResult.conflicts` records and `finalize_rows` discards.
 
 **Fix, in order of urgency:**
 
