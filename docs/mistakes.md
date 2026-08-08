@@ -11,6 +11,23 @@ uv run python -m lossrun.cli score out_qa/direct_calls/*/ --influence
 Companion to [CHALLENGES.md](CHALLENGES.md), which covers constraints of the
 pipeline. This covers the documents.
 
+## What the extended sample set changed
+
+Twenty-four documents were added to the five the pipeline was built against. They
+did not mostly reveal a worse extractor — they revealed **four defects in our own
+code**, three of which the original five could never have surfaced because all
+five carry clean claim numbers and conventional dates.
+
+| Defect | Cost, measured | Status |
+| --- | --- | --- |
+| Rows collapsed by the merge key (§ below) | 19 rows on one document, 5 on another | **open** — fix is described, not applied |
+| `13-Jul-17` and `07-06-21` unparseable | 191 cells on one document | **fixed** |
+| Scorer matches on claim number alone | 2 documents scored 0% that are 80% and 91% | **open** — measurement change, deliberately not made mid-run |
+| Composite `claim/occurrence` defeats matching | same 2 documents | **open** |
+
+Three of the four are keying or parsing, not reading. In every case the model had
+transcribed the page correctly and the pipeline threw the work away afterwards.
+
 ## The most serious defect found: rows silently collapsed by the merge key
 
 **A document with no claim-number column loses every row but one, and says
@@ -64,6 +81,69 @@ claim numbers, which is why this never showed up before.
 
 Not fixed in this branch: changing the merge key mid-measurement would make the
 runs in this document incomparable. It is the first thing to do next.
+
+## The scorer makes the same assumption, in a second place
+
+`merge.normalize_key` loses rows when there is no claim number. `accuracy._match_key`
+loses *matches* for the same reason — it keys on claim number alone:
+
+```python
+def _match_key(row):
+    value = row.get("Claim Number", "")
+    return "" if is_empty(value) else _WS_RE.sub("", str(value)).casefold()
+```
+
+**`2017-22 CIC Pkg Loss Runs.PDF`** — golden and extraction *both* hold
+`Claim Number = N/A` on every row, and the claimant names line up exactly
+(`WOB BETHESDA, LLC`, `MYRA CLEARY`, `HOLDINGS SOLIDCORE`). All 21 golden rows
+collapse onto the single key `""`, so the document scores **1/21 rows — 5%
+recall** for data that is largely right.
+
+**The two AIG documents** fail differently. The model returned
+`501-869408-001/0533293199` where golden holds `501-869408-001`: the page prints
+a composite claim/occurrence identifier and the model kept both halves. Exact
+matching sees two different claims, so both documents score **0%**.
+
+Measured with a key that falls back to claimant + accident date, and that
+compares only the first segment of a composite identifier:
+
+| Document | As measured | With a fallback key |
+| --- | --- | --- |
+| `17-18 XS Loss Runs - AIG.pdf` | 0/1 rows, 0.0% | 1/1 rows, **80.0%** |
+| `18-19 XS Loss Runs - AIG.pdf` | 0/1 rows, 0.0% | 1/1 rows, **90.9%** |
+
+**This has deliberately not been changed.** Altering the match key mid-measurement
+would move every number in this document and in the comparison workbooks without
+a single extraction changing. It is a recommendation, and the experiment above is
+what it is worth.
+
+> `2017-22 CIC` is not fixed by the fallback either — its accident dates come back
+> `N/A` on many rows, so claimant + date does not identify them. A document with
+> neither a claim number nor a reliable date needs the row's ordinal position,
+> which nothing currently carries through the merge.
+
+## Dates the parser could not read
+
+Two formats reached the pipeline that no format string covered, so they passed
+through verbatim and could never equal golden:
+
+| Printed | Why it failed | Now |
+| --- | --- | --- |
+| `13‐Jul‐17` | separator is **U+2010 HYPHEN**, not ASCII `-`; and `%d-%b-%y` was absent | `07/13/2017` |
+| `07-06-21` | `%m/%d/%y` existed for slashes, `%m-%d-%Y` for hyphens, but not `%m-%d-%y` | `07/06/2021` |
+
+The first cost **191 cells on `22-23 LSUM RNC GLIA +XLC`** — `Accident Date`
+0/103 and `Closed Date` 0/88, every one of them read correctly off the page. That
+document moved **67.1% → 76.4%**, with `Accident Date` going 0/103 → 103/103.
+
+Fixed in `cleaning.py` and in `accuracy.py`. Both, because they answer different
+questions: cleaning renders a date into golden's form for tables written from now
+on, while the scorer parses the extracted value at score time and so also repairs
+the tables already shipped.
+
+Typographic dash folding covers hyphen, en dash, em dash, horizontal bar, minus
+sign and fullwidth hyphen — a PDF supplies any of them where a date format
+expects ASCII.
 
 ## Bottom line
 
