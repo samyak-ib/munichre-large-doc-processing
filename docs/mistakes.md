@@ -158,17 +158,23 @@ expects ASCII.
 
 ## Bottom line
 
-- **Half of all wrong cells are omissions, not misreads** — 148 of 305 are cells
-  where the extraction returned `N/A` and golden holds a value. Omission is a
-  different failure from transcription and needs a different fix.
-- **Accuracy tracks one property more than any other: whether the page has a
-  text layer.** The one scanned document scores 72.1%; the four born-digital
-  ones average 90.3%.
-- **A large slice of the remaining "error" is not error.** On the biggest
-  document, 27 of its wrong cells are a golden disagreement the golden set's own
-  second transcription resolves in the model's favour.
-- **Two failures are real, systematic and fixable**: the claimant/adjuster swap
-  on stacked headers, and document-level values joined across carrier sections.
+- **Most wrong cells are omissions, not misreads.** 63% across the 24 new
+  documents (678 of 1081), 49% across the original five. Omission is a different
+  failure from transcription and needs a different fix.
+- **The unseen documents score higher than the ones the prompts were tuned on** —
+  85.83% cells against 83.73%. `COLUMN_HINTS` and every scoring equivalence were
+  written from the original five, so their number is an upper bound, and the new
+  set clearing it is the most reassuring result here.
+- **Recall is the weak number, and it is four documents, not a trend.** 86.7%
+  against 95.7%, and 31 of the 57 missing rows are one defect: the merge key.
+- **Accuracy tracks whether the page has a text layer.** The one scanned document
+  scores 72.1%; the four born-digital originals average 90.3%.
+- **Column failures do not generalise.** `Claimant Name` is 22.5% across the
+  original five and **95.1%** across the new 24 — the adjuster swap is a property
+  of one document's stacked headers, not of the model. `Line of Business` is the
+  reverse: 64.4% then **20.5%**.
+- **A large slice of the remaining "error" is not error** — golden disagreements,
+  and columns whose definition is unsettled.
 
 ## Where the five documents stand
 
@@ -348,16 +354,89 @@ judgement.
 
 ---
 
+## Where the twenty-four new documents stand
+
+373/430 rows matched (**86.7%** recall, 92.8% precision), **85.83%** cell
+accuracy, $0.8543. Sorted by cell accuracy:
+
+| Document | Pages | Rows | Recall | Cell acc. |
+| --- | --- | --- | --- | --- |
+| `18-19 GL Loss Run - United Specialty.pdf` | 1 | 1/1 | 100% | **95.7%** |
+| `GLI PKG CPP WCO Loss Runs 2017-2018.PDF` | 2 | 3/4 | 75% | 95.5% |
+| `CAU CPP MAR PKG WCO Loss Runs.PDF` | 10 | 51/51 | 100% | 95.2% |
+| `Reaco - 2022 WC - LR.pdf` | 23 | 12/12 | 100% | 95.0% |
+| `Loss Runs.pdf` | 4 | 5/5 | 100% | 94.5% |
+| `16-18 GL Loss Runs - Twenty Mile Acceptance.pdf` | 2 | 3/3 | 100% | 91.2% |
+| `LossRunsReport_9_7_2022.pdf` | 36 | 127/127 | 100% | 90.8% |
+| `78817366_KINSALE LOSS RUNS.pdf` | 4 | 1/1 | 100% | 90.5% |
+| `Reaco - 2022 Auto - LR_17-20.pdf` | 5 | 5/5 | 100% | 83.6% |
+| `05.09.2020 to 6-30-2022- GL only…` | 10 | 12/12 | 100% | 83.6% |
+| `Claim Loss Date Between 5-9-2017…` | 4 | 9/9 | 100% | 83.0% |
+| `WC Loss Runs.pdf` | 6 | 5/5 | 100% | 82.5% |
+| `Reaco - 2022 Auto - LR_20-22.pdf` | 1 | 1/1 | 100% | 80.0% |
+| `Auto Loss Runs.pdf` | 6 | 8/16 | 50% | 78.7% |
+| `22-23 LSUM RNC GLIA +XLC…` | 5 | 103/103 | 100% | 76.4% |
+| `Loss Runs Report 5 years recent.pdf` | 6 | 2/2 | 100% | 76.2% |
+| `CAU Loss Runs - 01 24 2023.PDF` | 5 | 16/16 | 100% | 75.2% |
+| `WCO Loss Runs 2018-2022.PDF` | 9 | 1/8 | **12%** | 68.8% |
+| `2017-22 CIC Pkg Loss Runs.PDF` | 2 | 1/21 | **5%** | 68.4% |
+| `GLI Loss Runs.PDF` | 2 | 5/5 | 100% | 65.7% |
+| `DetailResults_ACP_3086469186.pdf` | 3 | 1/1 | 100% | 60.0% |
+| `CAU Loss Runs 2016-2021.PDF` | 1 | 1/20 | **5%** | 50.0% |
+| `17-18 XS Loss Runs - AIG.pdf` | 2 | 0/1 | **0%** | **0.0%** |
+| `18-19 XS Loss Runs - AIG.pdf` | 1 | 0/1 | **0%** | **0.0%** |
+
+**Every document below 70% has an identified cause in our code**, not in the
+model's reading: the three merge collapses, the two composite-key AIG documents.
+The rest of the distribution is healthy — 13 of 24 at or above 83%, and the
+largest document in the set (36 pages, 127 rows) at 90.8% with perfect recall.
+
+Pooled by column, worst first:
+
+| Column | Correct | Accuracy | Note |
+| --- | --- | --- | --- |
+| Line of Business | 72/351 | **20.5%** | mostly omitted; golden holds composites like `H - Aerospace; CMA - …` |
+| Description | 125/269 | **46.5%** | omitted, or the narrative where golden holds the coded cause |
+| Insurer Loss Run | 218/373 | **58.4%** | the definition problem of §4, at scale |
+| Claim Total | 232/373 | 62.2% | often omitted where the document prints no total column |
+| Expense Paid | 256/361 | 70.9% | expense split across columns the schema names differently |
+| Policy Total | 324/373 | 86.9% | |
+
+`Claim Number` is **370/370** and `Policy Number` 269/270 — the identifiers this
+pipeline keys on are essentially perfect, which is what makes the keying defects
+above so costly: the data needed to fix them is right there.
+
 ## What to fix, in order of measured value
 
 | # | Fix | Worth | Confidence |
 | --- | --- | --- | --- |
-| 1 | OCR scanned pages for the text layer | 81 omitted cells on one document, and it unblocks QA there | high |
-| 2 | Anti-adjuster clause in extract + QA prompts | up to 51 cells on one document | medium — the fault is intermittent |
-| 3 | Forbid joined document-level values | 6 cells on `Loss_2`, more on any bundle | high |
-| 4 | Gate the `Occurrence ID` derivation on layout | 5 cells on `Loss_2` | high |
-| 5 | Define `Insurer Loss Run`: brand or legal entity | up to 65 cells, but needs a decision first | blocked on the class definition |
+| 1 | Surface merge collapses, then key rows without a claim number | **31 rows** across 3 documents, 2 of which ship a single row | high — the evidence is already computed and discarded |
+| 2 | Match on more than the claim number when scoring | 2 documents from 0% to 80% and 91% | high — measured, see §"The scorer makes the same assumption" |
+| 3 | OCR scanned pages for the text layer | 81 omitted cells on one document, and it unblocks QA there | high |
+| 4 | `Line of Business` and `Description` — omitted far more than misread | 279 + 144 wrong cells across the new set | medium — needs the columns' definitions pinned first |
+| 5 | Anti-adjuster clause in extract + QA prompts | up to 51 cells on one document | medium — intermittent, and absent from the new 24 |
+| 6 | Forbid joined document-level values | 6 cells on `Loss_2`, more on any bundle | high |
+| 7 | Gate the `Occurrence ID` derivation on layout | 5 cells on `Loss_2` | high |
+| 8 | Define `Insurer Loss Run`: brand or legal entity | up to 155 cells across both sets | blocked on the class definition |
 
-Items 3 and 4 are prompt and merge changes with no model risk. Item 1 is the
-largest and is a local dependency, not an API cost. Item 5 is not an engineering
-task until somebody decides what the column means.
+Items 1 and 2 are the ones to do first: they are pure defects, they are worth more
+than anything else on the list, and neither requires the model to change. Items 6
+and 7 are prompt and merge changes with no model risk. Item 3 is a local
+dependency, not an API cost. Items 4 and 8 are not engineering tasks until
+somebody decides what those columns mean.
+
+## Reproducing any of this
+
+```bash
+# every number in this document
+uv run python -m lossrun.cli compare \
+  old5=out_qa/direct_calls new24=out_new/direct_calls new24=out_w1/direct_calls \
+  --out comparisons/all29_old5_vs_new24.xlsx
+
+# per-document detail, offline, no API calls
+uv run python -m lossrun.cli score out_qa/direct_calls/*/ --influence
+```
+
+The comparison workbook carries `Summary`, `By Document`, `Calls` (one row per
+API request, tokens and cost normalized by the pages that call carried) and
+`Deltas`.
