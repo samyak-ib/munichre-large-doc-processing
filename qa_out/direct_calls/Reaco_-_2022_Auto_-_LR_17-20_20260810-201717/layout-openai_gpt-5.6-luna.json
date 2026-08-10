@@ -1,0 +1,42 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number",
+    "Claimant Name": "Claimant Name or Coverage Type",
+    "Description": "Description of Loss",
+    "Claim Status": "Status",
+    "Accident Date": "Loss Date",
+    "Report Date": "Date Received",
+    "Loss State": "Risk State",
+    "Policy Number": "Policy Number:",
+    "Indemnity Paid": "Actual Paid Losses",
+    "Indemnity Reserve": "Current Reserves",
+    "Expense Paid": "Allocated Expenses",
+    "Recovery Salvage Subro Reins": "Recovery Amount",
+    "Claim Total": "Total Claim",
+    "Valuation Date": "Loss Valuation Date:",
+    "Line of Business": "Line Of Business",
+    "Policy Effective Date": "Policy Term:",
+    "Policy Expiration Date": "Policy Term:",
+    "Policy Year": "Policy Term:",
+    "Insurer Loss Run": "Liberty Mutual.\nINSURANCE",
+    "Policy Total": "TOTAL",
+    "Insured": "Insured:"
+  },
+  "absent_columns": [
+    "Closed Date",
+    "Occurrence ID",
+    "Expense Reserved",
+    "Recovery Deductible"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "One claim/coverage entry with a numeric financial line followed by a detail line for coverage or claimant name, risk state, and description.",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$1,950",
+  "table_starts_on_page": 2,
+  "document_values": {
+    "Insured": "REACO HEATING & AIR\nREACO HEATING & AIR CONDITIONING",
+    "Valuation Date": "08/27/2022"
+  },
+  "reported_row_count": 6,
+  "notes": "Two Account Summary/Account Detail sections are concatenated: the first detail table is on pages 2-3 and the second begins on page 5. Detail headers repeat. Policy Number: and Policy Term: are block headers above groups of rows; the summary also has a Policy Number column split from Prefix. Each claim/coverage entry uses a two-line layout. TOTAL closes each policy-term block and GRAND TOTAL is an aggregate, not a claim. One claim number is printed on two separate coverage lines, so there are 6 displayed claim/coverage rows although the summaries count 3 and 2 claims. Date Received is the report/notification-date field; no closed-date date is printed."
+}

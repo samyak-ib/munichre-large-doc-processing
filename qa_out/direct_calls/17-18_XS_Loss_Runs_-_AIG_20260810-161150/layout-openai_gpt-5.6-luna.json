@@ -1,0 +1,40 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim # / OneClaim #",
+    "Claimant Name": "Claimant Name",
+    "Description": "Accident / Loss Description",
+    "Claim Status": "Status",
+    "Accident Date": "Loss Date",
+    "Report Date": "Receipt Date",
+    "Closed Date": "Closed Date",
+    "Loss State": "State/Terr/Country",
+    "Policy Number": "Policy",
+    "Indemnity Paid": "Ind/BI Paid",
+    "Expense Paid": "Alloc Exp Paid",
+    "Recovery Salvage Subro Reins": "Total Recoveries",
+    "Policy Effective Date": "Policy",
+    "Policy Expiration Date": "Policy",
+    "Policy Year": "Policy",
+    "Valuation Date": "Valuation Date",
+    "Insurer Loss Run": "AIG Loss Run"
+  },
+  "absent_columns": [
+    "Indemnity Reserve",
+    "Expense Reserved",
+    "Recovery Deductible",
+    "Claim Total",
+    "Occurrence ID",
+    "Line of Business",
+    "Policy Total"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "one row per individual claim",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "3,100,000.00 (no currency symbol; zero shown as .00)",
+  "table_starts_on_page": 2,
+  "document_values": {
+    "Insured": "CONCEPTUAL MANAGEMENT INC DBA",
+    "Valuation Date": "09/28/2022"
+  },
+  "notes": "The policy number and policy period appear above the claim group in the Policy line rather than in table columns. The table uses multi-line headers and a two-line claim row layout; the Accident / Loss Description text may wrap across lines. A subtotal-style row follows the claim row with Pol-Asco-Mod: and Claim Count =."
+}

@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim # / OneClaim #",
+    "Claimant Name": "Claimant Name",
+    "Description": "Accident / Loss Description",
+    "Claim Status": "Status",
+    "Accident Date": "Loss Date",
+    "Report Date": "Receipt Date",
+    "Closed Date": "Closed Date",
+    "Loss State": "State/Terr/Country",
+    "Policy Number": "Policy :",
+    "Indemnity Paid": "Ind/BI Paid",
+    "Expense Paid": "Alloc Exp Paid",
+    "Recovery Salvage Subro Reins": "Total Recoveries",
+    "Insurer Loss Run": "AIG Loss Run"
+  },
+  "absent_columns": [
+    "Occurrence ID",
+    "Indemnity Reserve",
+    "Expense Reserved",
+    "Recovery Deductible",
+    "Claim Total",
+    "Valuation Date",
+    "Line of Business",
+    "Policy Effective Date",
+    "Policy Expiration Date",
+    "Policy Year",
+    "Policy Total",
+    "Insured"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "one row per claim",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": ".00 with no currency symbol",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "CONCEPTUAL MANAGEMENT INC DBA",
+    "Valuation Date": "09/15/2022"
+  },
+  "notes": "The claim table uses a multi-line repeating header. Policy number appears above the claim row and is repeated in the subtotal-style row labeled \"Pol-Asco-Mod:\". The subtotal row also contains \"Claim Count =\" and financial amounts; it is not an individual claim row."
+}

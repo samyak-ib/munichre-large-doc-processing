@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim #",
+    "Description": "Description:",
+    "Accident Date": "Date of Loss",
+    "Report Date": "Date Reported",
+    "Policy Number": "Policy Number",
+    "Indemnity Paid": "Paid",
+    "Indemnity Reserve": "Reserve",
+    "Expense Paid": "Expense (ALAE)",
+    "Recovery Salvage Subro Reins": "Closed Subro",
+    "Claim Total": "Incurred",
+    "Valuation Date": "Report data current as of:",
+    "Line of Business": "Auto Type of Loss/Cause of Loss Detailed",
+    "Policy Year": "12/31/2022-12/31/2021",
+    "Insurer Loss Run": "Nationwide",
+    "Insured": "Named Insured"
+  },
+  "absent_columns": [
+    "Claimant Name",
+    "Claim Status",
+    "Closed Date",
+    "Loss State",
+    "Occurrence ID",
+    "Expense Reserved",
+    "Recovery Deductible",
+    "Policy Effective Date",
+    "Policy Expiration Date",
+    "Policy Total"
+  ],
+  "policy_number_placement": "column",
+  "row_granularity": "one claim payment-type detail row",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$1,234.56",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "THE PENSTAR GROUP",
+    "Valuation Date": "11/21/2022"
+  },
+  "notes": "Policy number, named insured, and policy period repeat in policy-level header blocks. The claim table header repeats on continuation pages. A single claim number can appear on multiple rows for different Type of Payment values, with a two-line Description row following each detail row. The claim status appears as (Closed) within the Claim # cell, while the source header combines Closed and Subro as \"Closed Subro\". Several policy periods have no claims."
+}

@@ -1,0 +1,40 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number",
+    "Claimant Name": "Claimant Name",
+    "Description": "Loss Description / Description Of Loss",
+    "Claim Status": "Claim Status / Status / Open/Closed",
+    "Accident Date": "Loss Date / Date Of Loss",
+    "Report Date": "Report Date",
+    "Closed Date": "Status",
+    "Loss State": "Location",
+    "Policy Number": "Policy No / Policy / Policy Numbers",
+    "Indemnity Paid": "Loss Paid / Paid Losses",
+    "Indemnity Reserve": "Loss Reserve / Reserve",
+    "Expense Paid": "Expense Paid / Paid Expenses",
+    "Expense Reserved": "Expense Reserve",
+    "Claim Total": "Total Loss + Exp / Net Incurred / Gross Incurred / Total Incurred",
+    "Valuation Date": "As Of / Valuation Date",
+    "Line of Business": "Product Group / Claim Type",
+    "Policy Effective Date": "Eff Date / Effective Date / Policy Term",
+    "Policy Expiration Date": "Exp Date / Exp Date / Policy Term",
+    "Policy Year": "Current Policy Period / Policy Term",
+    "Insurer Loss Run": "AIG / CNA / Catalytic Risk Managers",
+    "Policy Total": "Policy Total"
+  },
+  "absent_columns": [
+    "Occurrence ID",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible"
+  ],
+  "policy_number_placement": "document_header",
+  "row_granularity": "one row represents an individual claim or loss incident; policy-period totals and insured totals are separate summary rows",
+  "date_format": "M/D/YYYY and MM/DD/YYYY",
+  "currency_format": "$0, $1,912, $0.00, and $3,200.68",
+  "table_starts_on_page": 2,
+  "document_values": {
+    "Insured": "Friendswood Independent School District\nFRIENDSWOOD INDEPENDENT SCHOOL DISTRICT\nFRIENDSWOOD INDEPENDENT SCHOOL",
+    "Valuation Date": "12/04/2020\n11/30/2020"
+  },
+  "notes": "The first loss table begins on page 2 with Catalytic Risk Managers. CNA claim-detail headers repeat on continuation pages, with a two-line header and two-line claim layout; CNA also uses TOTAL rows for policy periods. Catalytic uses Total for Contract# and Total for Insured rows and may show No Reported Losses. The report bundles multiple carrier sections with different valuation dates. Policy numbers are generally printed in section or document headers rather than repeated on continuation claim rows."
+}

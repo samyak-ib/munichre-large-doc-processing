@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim #:",
+    "Claimant Name": "Claimant",
+    "Description": "Description of Accident:",
+    "Claim Status": "Claim Status:",
+    "Accident Date": "Date of Loss:",
+    "Report Date": "Date Open:",
+    "Closed Date": "Date Closed:",
+    "Loss State": "Accident State:",
+    "Policy Number": "Policy Number:",
+    "Indemnity Paid": "Loss Paid",
+    "Indemnity Reserve": "Current Loss Resv",
+    "Expense Paid": "Exp Paid",
+    "Expense Reserved": "Current Exp Resv",
+    "Recovery Salvage Subro Reins": "Salvage Recover / Subro Recover",
+    "Recovery Deductible": "Deduct Recover",
+    "Claim Total": "Gross Incurred",
+    "Valuation Date": "Claims Activity as of",
+    "Policy Effective Date": "Policy Period:",
+    "Policy Expiration Date": "Policy Period:",
+    "Policy Year": "Policy Period:",
+    "Insurer Loss Run": "Carrier Name:",
+    "Policy Total": "SUB TOTALS for Policy Period:",
+    "Insured": "Name of Insured:"
+  },
+  "absent_columns": [
+    "Occurrence ID",
+    "Line of Business"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "one row per individual claim and claimant",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$1,234.56 or -$1,234.56 for negatives",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "CONCEPTUAL MANAGEMENT, INC. DBA TRITON CONSTRUCTION",
+    "Valuation Date": "09/18/2022"
+  },
+  "notes": "Each policy block begins with its own Policy Number, insured, carrier, and Policy Period headers, followed by one or more claim blocks. Claim blocks use a two-line layout: claim-level details and Description of Accident appear above the financial table row. Each claim is followed by a Group Total for Claim No row. Policy-period subtotal rows and, at the end, a GRAND TOTALS row are not claim rows. The second policy block begins on page 2 and repeats the header structure. The insured label is printed as CONCEPTUAL MANAGEMENT, INC DBA: TRITON CONSTRUCTION in the second block."
+}

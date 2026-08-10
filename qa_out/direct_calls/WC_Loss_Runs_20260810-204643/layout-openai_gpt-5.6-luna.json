@@ -1,0 +1,42 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number:",
+    "Claimant Name": "Claimant Name:",
+    "Description": "Cause",
+    "Claim Status": "Claim Status:",
+    "Report Date": "Date Reported to Carrier",
+    "Closed Date": "Close Date",
+    "Loss State": "Location",
+    "Policy Number": "Policy Number",
+    "Indemnity Paid": "Paid",
+    "Indemnity Reserve": "Reserved",
+    "Expense Paid": "Paid Loss Adjustment Expenses",
+    "Expense Reserved": "Outstanding Losses and Expenses",
+    "Recovery Salvage Subro Reins": "Subrogation",
+    "Claim Total": "Total Incurred",
+    "Valuation Date": "Valued as of:",
+    "Policy Effective Date": "Effective Date",
+    "Policy Expiration Date": "Expiration Date",
+    "Policy Year": "Policy Period",
+    "Insurer Loss Run": "Insurance Company of the West",
+    "Policy Total": "Total Incurred Losses and Expenses",
+    "Insured": "Insured"
+  },
+  "absent_columns": [
+    "Accident Date",
+    "Occurrence ID",
+    "Recovery Deductible",
+    "Line of Business"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "one individual workers' compensation claim represented by a repeated claim-detail block",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$1,234.56",
+  "table_starts_on_page": 2,
+  "document_values": {
+    "Insured": "U S GRANITE CORPORATION",
+    "Valuation Date": "10/09/2022"
+  },
+  "reported_row_count": null,
+  "notes": "The report contains repeated three-page policy blocks. Claim details begin on PDF page 2 and resume for a second policy block on PDF page 5; the supplied pages stop before the second block's final page. Policy Number, Policy Period, Agent, Insured, and Valued as of appear in the block header rather than on each claim. Each claim block contains Cause and Accident Description, followed by a nested financial matrix with Paid, Reserved, and Total Incurred headings and Medical, Indemnity, Loss Adj. Expense, Rehab, Subrogation, and Total rows. Policy summaries also contain Paid Loss Adjustment Expenses, Outstanding Losses and Expenses, and Total Incurred Losses and Expenses. The source uses Date of Injury rather than an allowed Accident Date label. Per-block summaries show claim counts of 2 and 3, but no single report-wide claim-row count is stated on the supplied pages."
+}

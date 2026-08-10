@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number",
+    "Description": "Loss Description",
+    "Claim Status": "Status",
+    "Accident Date": "Date of Loss",
+    "Policy Number": "Policy Number",
+    "Indemnity Paid": "Amount Paid",
+    "Indemnity Reserve": "Reserve Amt",
+    "Expense Paid": "Expense Pymts:",
+    "Recovery Salvage Subro Reins": "Recovery Amt:",
+    "Claim Total": "Total Incurred",
+    "Valuation Date": "As Of Date:",
+    "Line of Business": "Claim Type Desc:",
+    "Policy Effective Date": "Eff Date:",
+    "Policy Expiration Date": "Exp Date:",
+    "Policy Year": "Term:",
+    "Insurer Loss Run": "AmTrust North America / MERCURY INSURANCE",
+    "Policy Total": "Policy Totals / Total Policy Loss(es):",
+    "Insured": "Insured Name: / Named Insured:"
+  },
+  "absent_columns": [
+    "Claimant Name",
+    "Report Date",
+    "Closed Date",
+    "Loss State",
+    "Occurrence ID",
+    "Expense Reserved",
+    "Recovery Deductible"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "One individual claim record within a policy term, with multiple coverage, payment, and status lines possible within a claim row.",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$1,234.56",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "US GRANITE CORPORATION / US Granite Corporation",
+    "Valuation Date": "10/11/2022"
+  },
+  "notes": "The Mercury section groups claims by Term and repeats the table header for each term; the policy number appears in the document header. Coverage Type, Amount Paid, and Status may contain multiple stacked lines for one claim. Term subtotal rows are labeled \"Total Term Loss(es):\" and the overall policy subtotal is labeled \"Total Policy Loss(es):\". The AmTrust sections use a repeating \"Claim History\" header, place the policy number above the claim group, and include \"Policy Totals\" rows with Eff Date, Exp Date, Claim Count, and financial totals. Continuation pages should retain the applicable policy number and term/block context."
+}

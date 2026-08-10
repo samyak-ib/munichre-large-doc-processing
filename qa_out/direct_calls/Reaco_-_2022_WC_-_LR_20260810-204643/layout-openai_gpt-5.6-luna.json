@@ -1,0 +1,42 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim #",
+    "Claimant Name": "Claimant",
+    "Description": "Loss Description",
+    "Claim Status": "Claim Status",
+    "Accident Date": "Loss Date",
+    "Report Date": "Report Date",
+    "Closed Date": "Closed Date",
+    "Loss State": "Injury Location",
+    "Policy Number": "Policy #",
+    "Indemnity Paid": "Paid",
+    "Indemnity Reserve": "Reserves",
+    "Expense Paid": "Expense",
+    "Expense Reserved": "Expense",
+    "Recovery Salvage Subro Reins": "Recovery",
+    "Claim Total": "Total",
+    "Valuation Date": "Valuation Date",
+    "Policy Effective Date": "Term",
+    "Policy Expiration Date": "Term",
+    "Policy Year": "Term",
+    "Insurer Loss Run": "Loss Run For",
+    "Policy Total": "Totals for Policy",
+    "Insured": "Insured"
+  },
+  "absent_columns": [
+    "Occurrence ID",
+    "Recovery Deductible",
+    "Line of Business"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "one individual claim record",
+  "date_format": "M/D/YYYY",
+  "currency_format": "$1,234.56",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "Reaco Heating & Air Conditioning, Inc.",
+    "Valuation Date": "7/4/2022"
+  },
+  "reported_row_count": null,
+  "notes": "Each observed page contains one claim detail block followed by a policy-level summary. The financial section is a matrix with Incurred, Paid, and Reserves rows under Medical, Disability, VR, Expense, Total, and Recovery columns. Policy # is carried within each claim block, while Target Policy is repeated in the document header. Term supplies the policy effective date, expiration date, and policy year. The visible Total Records lines are policy-level summaries and do not establish a whole-document row count."
+}

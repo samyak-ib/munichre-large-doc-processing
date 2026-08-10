@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number",
+    "Claimant Name": "Claimant",
+    "Claim Status": "Status",
+    "Accident Date": "Date Of Loss",
+    "Report Date": "Date Reported",
+    "Loss State": "State",
+    "Policy Number": "Policy Number",
+    "Indemnity Paid": "Loss Paid",
+    "Indemnity Reserve": "Loss Reserve",
+    "Expense Paid": "LAE Paid",
+    "Expense Reserved": "LAE Reserve",
+    "Recovery Salvage Subro Reins": "Recovery",
+    "Claim Total": "Total Incurred",
+    "Policy Effective Date": "Effective Date",
+    "Policy Expiration Date": "Expiration Date",
+    "Insurer Loss Run": "header company name",
+    "Policy Total": "Total Incurred",
+    "Insured": "header entity name"
+  },
+  "absent_columns": [
+    "Description",
+    "Closed Date",
+    "Recovery Deductible",
+    "Occurrence ID",
+    "Valuation Date",
+    "Line of Business",
+    "Policy Year"
+  ],
+  "policy_number_placement": "column",
+  "row_granularity": "one row represents an individual claim or reported loss, with claimant and financial details shown in a secondary detail line",
+  "date_format": "M/D/YYYY",
+  "currency_format": "$0.00",
+  "table_starts_on_page": 4,
+  "document_values": {
+    "Insured": "New Empire Builder Corp; 37-14 34th Street Property LLC | New Empire Builder Corp; First Building Enterprises LLC | New Empire Builder Corp; Onboard Hospitality, LLC | New Empire Builder Corp; North Ocean Management LLC | New Empire Builder Corp; Nere Li Development LLC",
+    "Valuation Date": "N/A"
+  },
+  "notes": "Each policy block begins with the insurer name, an entity header, Report Last Run Date, and a policy summary table. The policy summary header repeats for each block. Blocks with no claims show NO CLAIMS REPORTED. The claim detail block uses a primary row with Claim Number, Date Of Loss, Date Reported, Status, State, and Accident Facts, followed by a claimant and financial-detail row and a Total for Claim row. Report Last Run Date is a run date, not a valuation date. The supplied pages correspond to printed document pages 4, 5, 7, 10, and 11 of 15."
+}

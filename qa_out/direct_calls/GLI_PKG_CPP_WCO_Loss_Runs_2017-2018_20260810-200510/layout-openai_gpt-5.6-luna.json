@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Policy Number / Claim Number",
+    "Claimant Name": "Claimant Name / Claim Description",
+    "Description": "Claimant Name / Claim Description",
+    "Claim Status": "Date of Loss / Status",
+    "Accident Date": "Date of Loss / Status",
+    "Closed Date": "Date of Loss / Status",
+    "Loss State": "Risk Location",
+    "Policy Number": "Policy Number / Claim Number",
+    "Indemnity Paid": "Paid Loss (Indemnity)",
+    "Indemnity Reserve": "Reserves / Recoveries*",
+    "Expense Paid": "Paid Expenses",
+    "Recovery Salvage Subro Reins": "Reserves / Recoveries*",
+    "Recovery Deductible": "Reserves / Recoveries*",
+    "Claim Total": "Gross Incurred / Net Incurred",
+    "Valuation Date": "Report as of:",
+    "Line of Business": "LOB",
+    "Policy Effective Date": "Effective Date",
+    "Policy Expiration Date": "Policy Period",
+    "Policy Year": "Policy Period",
+    "Insurer Loss Run": "FCCI",
+    "Policy Total": "Net Incurred",
+    "Insured": "ACCOUNT:"
+  },
+  "absent_columns": [
+    "Report Date",
+    "Occurrence ID",
+    "Expense Reserved"
+  ],
+  "policy_number_placement": "column",
+  "row_granularity": "one row per individual claim",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$1,234.56",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "PRECISION GUTTERS LLC",
+    "Valuation Date": "Aug 16, 2022"
+  },
+  "notes": "Page 1 contains a LOSS RUN SUMMARY followed by the LOSS RUN DETAIL claim table. The detail table continues onto page 2 and repeats its column header. Policy Number / Claim Number is a combined column with the policy number above the claim number. Date of Loss / Status is a combined cell: the accident date appears above CLOSED and the closed date follows it. Claimant Name / Claim Description is also a combined two-part cell. Rows use multiline layouts. Reserves / Recoveries* is a combined financial column; the footnote states that recoveries include deductibles, salvage, and subrogation."
+}

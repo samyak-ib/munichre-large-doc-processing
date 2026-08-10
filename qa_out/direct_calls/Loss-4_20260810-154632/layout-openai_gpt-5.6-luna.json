@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number",
+    "Claimant Name": "Claimant",
+    "Accident Date": "Accident Date",
+    "Report Date": "Notice Date",
+    "Closed Date": "Close Date",
+    "Policy Number": "Policy Number(s)",
+    "Indemnity Paid": "Claim",
+    "Indemnity Reserve": "Claim",
+    "Expense Paid": "Expense",
+    "Expense Reserved": "Expense",
+    "Claim Total": "Total",
+    "Valuation Date": "Losses as of",
+    "Policy Year": "Policy Year",
+    "Insurer Loss Run": "TRAVELERS",
+    "Policy Total": "Subtotals for Policy Year : 2016",
+    "Insured": "Company ABC"
+  },
+  "absent_columns": [
+    "Description",
+    "Claim Status",
+    "Loss State",
+    "Occurrence ID",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible",
+    "Line of Business",
+    "Policy Effective Date",
+    "Policy Expiration Date"
+  ],
+  "policy_number_placement": "document_header",
+  "row_granularity": "one row represents an individual claim",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$0.00",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "Company ABC",
+    "Valuation Date": "03/16/2016"
+  },
+  "notes": "The main claim table is on page 1. Claim rows use a two-line layout: the first line contains claimant and claim identifiers/dates, and the following line contains the narrative and financial amounts. Financial columns are Total, Claim, Medical, and Expense, with Inc:, Pd:, and O/S: rows. Subtotals repeat for Line of Insurance, Policy Year, and Report Grand Totals. Page 2 contains report parameters and does not continue the claim table."
+}

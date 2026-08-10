@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claimant Name": "Claimant/Payee",
+    "Description": "Loss Description",
+    "Accident Date": "Loss Date",
+    "Closed Date": "End Rsv or Month Closed",
+    "Occurrence ID": "Oc #",
+    "Policy Number": "Policy",
+    "Indemnity Paid": "Paid",
+    "Indemnity Reserve": "End Rsv or Month Closed",
+    "Expense Paid": "Expense",
+    "Claim Total": "Incurred",
+    "Valuation Date": "Value Through Date",
+    "Policy Effective Date": "Policy Effect",
+    "Insurer Loss Run": "The Cincinnati Insurance Companies",
+    "Policy Total": "Total for Policy Effective Date",
+    "Insured": "Insured"
+  },
+  "absent_columns": [
+    "Claim Number",
+    "Claim Status",
+    "Report Date",
+    "Loss State",
+    "Expense Reserved",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible",
+    "Line of Business",
+    "Policy Expiration Date",
+    "Policy Year"
+  ],
+  "policy_number_placement": "column",
+  "row_granularity": "One claim or claimant/payee line; an occurrence may contain multiple claimant/payee lines.",
+  "date_format": "MM-DD-YY",
+  "currency_format": "1,234 or -1,234 for negatives",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "BUILDERGURU CONTRACTING INC, G",
+    "Valuation Date": "03-16-22"
+  },
+  "notes": "The main table header repeats on page 2. Rows may continue across multiple lines with Policy, Policy Effect, Named Insured, Oc #, and Loss Date blank on continuation lines. The End Rsv or Month Closed column contains either a numeric end reserve or a month/year closed value. Subtotal rows follow loss dates and policy effective dates; the report also includes policy symbol and report grand total rows."
+}

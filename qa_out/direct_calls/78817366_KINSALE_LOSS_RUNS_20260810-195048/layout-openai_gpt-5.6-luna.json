@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim #",
+    "Claimant Name": "Claimant",
+    "Description": "Loss Description",
+    "Claim Status": "Status",
+    "Accident Date": "Loss Date",
+    "Report Date": "Reported Date",
+    "Indemnity Paid": "Total Paid",
+    "Indemnity Reserve": "Total Open",
+    "Claim Total": "Total Incurred",
+    "Policy Number": "Policy",
+    "Policy Effective Date": "Term",
+    "Policy Expiration Date": "Term",
+    "Policy Year": "Term",
+    "Insurer Loss Run": "Kinsale Insurance",
+    "Insured": "Insured",
+    "Valuation Date": "As Of Date"
+  },
+  "absent_columns": [
+    "Closed Date",
+    "Loss State",
+    "Occurrence ID",
+    "Expense Paid",
+    "Expense Reserved",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible",
+    "Policy Total",
+    "Line of Business"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "one claim per row, with Claimant, Loss Description, and Loss Date shown on a continuation line",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$0",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "Grandway Construction LLC",
+    "Valuation Date": "10/04/2021"
+  },
+  "notes": "Each policy section has a repeating Policy Information header and Claims table. Policy Number is shown as Policy above the claim rows and is not a table column. Claim rows use a two-line layout: the claim number, term, policy type, status, reported date, and financial amounts appear on the first line; Claimant, Loss Description, and Loss Date appear on the following line. Rows stating No Claims Found for Policy Term are policy-term summary rows, not claims. The report contains sections for policies 0100064791 and 0100085115."
+}

@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number",
+    "Description": "Description",
+    "Closed Date": "Close Date",
+    "Accident Date": "Loss Date",
+    "Policy Number": "Policy Number",
+    "Indemnity Paid": "Paid Amount*",
+    "Indemnity Reserve": "Pending Reserve Amount",
+    "Expense Paid": "Allocated Expense",
+    "Recovery Salvage Subro Reins": "Recovery Amount",
+    "Policy Effective Date": "Policy Term",
+    "Policy Expiration Date": "Policy Term",
+    "Policy Year": "Policy Term",
+    "Insurer Loss Run": "Auto-Owners INSURANCE",
+    "Policy Total": "Totals for Policy",
+    "Insured": "Named Insured"
+  },
+  "absent_columns": [
+    "Claimant Name",
+    "Claim Status",
+    "Report Date",
+    "Loss State",
+    "Occurrence ID",
+    "Expense Reserved",
+    "Recovery Deductible",
+    "Claim Total",
+    "Valuation Date",
+    "Line of Business"
+  ],
+  "policy_number_placement": "document_header",
+  "row_granularity": "One claim block representing an individual reported claim, with some claims containing multiple loss date, close date, coverage, and financial lines.",
+  "date_format": "Mixed M/D/YYYY and MM/DD/YYYY",
+  "currency_format": "$1,234.56",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "DREAMWORKS REMODELING LLC\nDBA DREAMWORKS EXPRESS KITCHEN",
+    "Valuation Date": "N/A"
+  },
+  "notes": "Claims are grouped by repeating Term blocks. Each claim block repeats Claim Number and Policy Term and may use a two-line layout for multiple loss/close date and coverage entries. Term-level subtotal rows are labeled Total:, followed by a policy-level aggregate labeled Totals for Policy. Page 2 continues the Term blocks from page 1 but does not repeat the report header. Some terms contain No Claims Found for this Policy Term. The Paid Amount footnote states: *Paid Amount does not include Recoveries."
+}

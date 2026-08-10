@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim number:",
+    "Claimant Name": "Claimant(s)",
+    "Description": "Loss description:",
+    "Claim Status": "Status:",
+    "Accident Date": "Loss date:",
+    "Closed Date": "Close date:",
+    "Policy Number": "Policy number:",
+    "Indemnity Reserve": "Outstanding loss reserve",
+    "Claim Total": "Claim total",
+    "Valuation Date": "Report as of:",
+    "Line of Business": "Line of business:",
+    "Policy Effective Date": "Policy tenure:",
+    "Policy Expiration Date": "Policy tenure:",
+    "Policy Year": "Policy period",
+    "Insurer Loss Run": "encova INSURANCE",
+    "Policy Total": "Term total",
+    "Insured": "Policyholder name:"
+  },
+  "absent_columns": [
+    "Report Date",
+    "Loss State",
+    "Occurrence ID",
+    "Indemnity Paid",
+    "Expense Paid",
+    "Expense Reserved",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible"
+  ],
+  "policy_number_placement": "document_header",
+  "row_granularity": "one row per claim/incident, with one or more claimant subrows",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$ 20,000.00; zero amounts shown as $ -",
+  "table_starts_on_page": 2,
+  "document_values": {
+    "Insured": "LEGACY CONSTRUCTION SERVICES LLC",
+    "Valuation Date": "06/30/2022"
+  },
+  "notes": "The first page contains a Commercial Package Summary with policy-period totals. Claim pages repeat the document header, including the policy number, and group claims under a repeating Term header. Each claim is a multi-line block containing claim number, line of business, loss date, loss description, status, close date, claimant(s), Outstanding loss reserve, Incurred loss, and Claim total. Claimants may span multiple lines. A Term total row closes the policy-term block; continuation pages may begin with the remainder of the preceding claim or claim total before the next claim block."
+}

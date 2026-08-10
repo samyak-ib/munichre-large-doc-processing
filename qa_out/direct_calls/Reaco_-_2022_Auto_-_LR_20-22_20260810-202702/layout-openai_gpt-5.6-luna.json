@@ -1,0 +1,42 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number",
+    "Description": "Loss Description",
+    "Claim Status": "Status",
+    "Policy Number": "Policy Number",
+    "Indemnity Paid": "Amt Paid",
+    "Indemnity Reserve": "Reserved",
+    "Expense Paid": "Expense",
+    "Policy Effective Date": "Policy Effective Date Range",
+    "Policy Expiration Date": "Policy Effective Date Range",
+    "Insurer Loss Run": "Insurance Company",
+    "Insured": "Insured Name"
+  },
+  "absent_columns": [
+    "Claimant Name",
+    "Accident Date",
+    "Report Date",
+    "Closed Date",
+    "Loss State",
+    "Occurrence ID",
+    "Expense Reserved",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible",
+    "Claim Total",
+    "Valuation Date",
+    "Line of Business",
+    "Policy Year",
+    "Policy Total"
+  ],
+  "policy_number_placement": "document_header",
+  "row_granularity": "one claim",
+  "date_format": "M/D/YYYY (header dates also appear as MM/DD/YYYY)",
+  "currency_format": "$0",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "REACO HEATING & AIR CONDITIONING, INC.",
+    "Valuation Date": "N/A"
+  },
+  "reported_row_count": 1,
+  "notes": "Policy metadata is in a document-level header, including the combined Policy Effective Date Range. The claim table has a single-line row layout with no subtotal or total row. Report Run Date is present but is not a Valuation Date; Claim Date is not an allowed Accident Date or Report Date label."
+}
