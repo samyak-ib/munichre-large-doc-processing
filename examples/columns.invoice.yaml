@@ -1,0 +1,67 @@
+# Worked example of the plain column-list schema format — see docs/COLUMNS.md.
+#
+# This one is for a vendor invoice's line-item table, to show the format on a
+# document that has nothing to do with insurance. Try it against any invoice
+# or purchase-order PDF:
+#
+#   uv run lossrun schema --schema examples/columns.invoice.yaml
+#   uv run lossrun extract your-invoice.pdf --schema examples/columns.invoice.yaml
+
+# What one row and the document as a whole are called, for the wording of the
+# prompts sent to the model. Both default to "row" / "document" if omitted.
+row_label: line item
+document_label: vendor invoice
+
+columns:
+  # A document-level value: extracted once during layout discovery rather than
+  # per row, and stamped onto every row afterwards.
+  - name: Vendor
+    doc_level: true
+    prompt: >
+      The company that issued the invoice, usually shown in the letterhead or
+      a "Bill From" / "Remit To" block. Return the full company name.
+
+  # Part of the row's identity (`key: true`). Declare key columns in priority
+  # order — the first one is also used, by default, for anything that needs a
+  # single column: matching rows to golden data, and carrying a block-level
+  # value down when it sits above a group of rows instead of in its own
+  # column. Override either with `match: true` / `group: true` on a different
+  # column, as Line Number does below.
+  - name: Invoice Number
+    key: true
+    prompt: >
+      The invoice's own identifier, usually labelled "Invoice #", "Invoice
+      No." or "Inv #". May be printed once above a block of line items rather
+      than repeated in its own column — if so, it still belongs on every line
+      item under that block; extract it per row where you can, and the block
+      case is carried down automatically.
+
+  - name: Line Number
+    key: true
+    match: true # unique within one invoice; Invoice Number on its own is not.
+    prompt: >
+      The line item's position on the invoice, usually the leftmost column
+      ("Line", "Item #", "#"). Return it exactly as printed.
+
+  # `identifier` (without `key`) means: part of the row's identity is not
+  # required, but still verified verbatim against the document's text layer —
+  # for a value that names something rather than describing it.
+  - name: SKU
+    identifier: true
+    prompt: The vendor's product or part code for this line item, if printed.
+
+  - name: Description
+    prompt: The line item's description, exactly as printed.
+
+  - name: Quantity
+    prompt: The quantity billed for this line item.
+
+  - name: Unit Price
+    type: money
+    prompt: The price per unit for this line item.
+
+  - name: Line Total
+    type: money
+    prompt: >
+      The extended total printed for this line item. Extract the value the
+      document prints; never compute it yourself from quantity and price.

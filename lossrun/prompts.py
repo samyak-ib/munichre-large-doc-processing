@@ -1,9 +1,16 @@
 """Prompt construction for layout discovery, table extraction and QA review.
 
-Column semantics come verbatim from schema.json — this module frames them and
-adds `COLUMN_HINTS`, the document-shape guidance measured against golden data.
-The verbatim clause carries the anti-autocorrect load that reasoning effort would
-otherwise carry, because the API ignores the `reasoning` parameter.
+Column semantics come verbatim from the schema (schema.json, or a plain column
+list) — this module frames them and adds `COLUMN_HINTS`, loss-run-specific
+document-shape guidance measured against golden data. The verbatim clause
+carries the anti-autocorrect load that reasoning effort would otherwise carry,
+because the API ignores the `reasoning` parameter.
+
+Every function below takes the row/document wording (`schema.row_label`,
+`schema.document_label`) and the key columns (`schema.key_columns`) from the
+schema rather than hardcoding "claim" and "loss-run report" — the loss-run
+schema sets them to exactly that, so its own prompts read unchanged, but a
+different column list gets its own wording instead of a misleading frame.
 """
 
 from __future__ import annotations
@@ -12,24 +19,35 @@ import json
 
 from .schema_loader import TableSchema
 
-VERBATIM_CLAUSE = """TRANSCRIPTION RULES — these override every other instruction:
+KEY_EXAMPLE_PLACEHOLDER = "<{}>"
+
+
+def _verbatim_clause(key_columns: tuple[str, ...]) -> str:
+    keys = " and ".join(key_columns) if len(key_columns) <= 2 else ", ".join(key_columns)
+    return f"""TRANSCRIPTION RULES — these override every other instruction:
 - Copy every value character for character exactly as printed. Never normalize,
   never expand, never abbreviate, never correct an apparent typo or misspelling.
-- Claim numbers and claimant names are primary keys. Do not add or remove leading
+- {keys} identify a row. Do not add or remove leading
   zeros, digits, spaces, or punctuation. `C003` is `C003`, never `C0000003`.
-  `McAllister` is `McAllister`, never `MacAllister`. If a name looks misspelled,
-  it is not misspelled — copy it as printed.
+  `McAllister` is `McAllister`, never `MacAllister`. If a value looks
+  misspelled, it is not misspelled — copy it as printed.
 - Never invent a value. When a column has no value for a row, emit `N/A`.
 - Never merge, split, reorder, sort, or deduplicate rows. Emit them in the order
   they appear in the document."""
 
-OUTPUT_CONTRACT = """OUTPUT FORMAT — return one JSON object and nothing else. No prose,
+
+def _key_example(key_columns: tuple[str, ...]) -> str:
+    return ", ".join(KEY_EXAMPLE_PLACEHOLDER.format(k) for k in key_columns)
+
+
+def _output_contract(key_columns: tuple[str, ...]) -> str:
+    return f"""OUTPUT FORMAT — return one JSON object and nothing else. No prose,
 no markdown fence, no explanation:
 
-{"columns": [<the column names, in the order given below>],
+{{"columns": [<the column names, in the order given below>],
  "rows": [[<value for each column, same order>], ...],
  "truncated": <true if you ran out of room before the last row, else false>,
- "last_row_key": [<Policy Number>, <Claim Number>, <Claimant Name>] of the final row you emitted}
+ "last_row_key": [{_key_example(key_columns)}] of the final row you emitted}}
 
 Column names are declared once in `columns`; every row is a positional array in
 that same order. Do not repeat column names inside rows. This format exists to
@@ -37,12 +55,30 @@ keep long tables inside the output budget — if you are running short of room, 
 `truncated` to true and stop after a complete row rather than abbreviating."""
 
 
-# Guidance added on top of schema.json, one entry per column that needed it.
-# Each rule describes a document shape that loss runs actually use and that the
+def _qa_output_contract(key_columns: tuple[str, ...]) -> str:
+    key_example = _key_example(key_columns)
+    return f"""OUTPUT FORMAT — return one JSON object and nothing else. No prose,
+no markdown fence, no explanation:
+
+{{"findings": [{{"row": [{key_example}],
+               "column": "<the column that is wrong>",
+               "correct_value": "<what the document prints, character for character>",
+               "reason": "<one short sentence>"}}],
+ "missing_rows": [{{"row": [{key_example}],
+                   "reason": "<one short sentence>"}}]}}
+
+Report ONLY cells that are wrong. A chunk with nothing wrong returns
+`{{"findings": [], "missing_rows": []}}` — that is the expected answer for a clean
+chunk, not a failure to look."""
+
+
+# Guidance added on top of the schema, one entry per column that needed it.
+# Each rule describes a document shape loss runs actually use and that the
 # schema's own wording does not cover; each was written after scoring against
 # golden data showed the column failing for a structural reason rather than a
 # transcription one. Kept separate from schema.json so this dict is exactly the
-# delta to hand back for the class definition.
+# delta to hand back for the class definition. Column names that do not appear
+# in a given schema simply never match — harmless on any other column list.
 COLUMN_HINTS = {
     "Policy Total": """This figure is printed in the document as a policy-level
 aggregate. It is never on the claim row itself, which is why it is easy to miss.
@@ -87,7 +123,7 @@ the document has no coded cause column.""",
 
 
 def column_spec_block(schema: TableSchema, columns: list[str] | None = None) -> str:
-    """The per-column extraction rules: schema.json verbatim, plus our hints."""
+    """The per-column extraction rules: the schema's own prompt, plus our hints."""
     wanted = set(columns) if columns else None
     blocks = []
     for column in schema.columns:
@@ -103,10 +139,15 @@ def column_spec_block(schema: TableSchema, columns: list[str] | None = None) -> 
 
 def layout_instructions(schema: TableSchema) -> str:
     """System-level framing for the layout-discovery call."""
-    return f"""You are analysing the first pages of an insurance loss-run report to
-map its structure. You are NOT extracting the claim table yet.
+    group_col = schema.group_column
+    doc_value_columns = dict.fromkeys(
+        [c.name for c in schema.doc_columns] + list(schema.backfill_columns)
+    )
+    doc_values_example = ", ".join(f'"{name}": "..."' for name in doc_value_columns) or '"...": "..."'
+    return f"""You are analysing the first pages of a {schema.document_label} to
+map its structure. You are NOT extracting the {schema.row_label} table yet.
 
-{VERBATIM_CLAUSE}
+{_verbatim_clause(schema.key_columns)}
 
 Return one JSON object and nothing else:
 
@@ -116,31 +157,36 @@ Return one JSON object and nothing else:
   "row_granularity": "<what one row of the main table represents>",
   "date_format": "<the date format used, e.g. MM/DD/YYYY>",
   "currency_format": "<how amounts are written, e.g. $1,234.56 or (1,234.56) for negatives>",
-  "table_starts_on_page": <1-based page number where the claim table begins>,
-  "document_values": {{"Insured": "...", "Valuation Date": "...", "Insurer Loss Run": "..."}},
+  "table_starts_on_page": <1-based page number where the {schema.row_label} table begins>,
+  "document_values": {{{doc_values_example}}},
   "notes": "<anything a later reader of continuation pages would need, such as a
             repeating header, a subtotal row pattern, or a two-line row layout>"}}
 
-`policy_number_placement` matters: say "block_header" when the policy number sits
-above a group of claim rows rather than in its own column, because later pages
-will not repeat it.
+`policy_number_placement` matters: say "block_header" when {group_col} sits
+above a group of rows rather than in its own column, because later pages will
+not repeat it.
 
 Target columns and their definitions:
 
 {column_spec_block(schema)}"""
 
 
-def layout_prompt(page_count: int, total_pages: int, context_text: str = "") -> str:
+def layout_prompt(
+    page_count: int,
+    total_pages: int,
+    context_text: str = "",
+    document_label: str = "insurance loss-run report",
+) -> str:
     prompt = (
         f"The attached PDF is the first {page_count} page(s) of a "
-        f"{total_pages}-page loss-run report. Map its structure and return the "
+        f"{total_pages}-page {document_label}. Map its structure and return the "
         f"JSON object described in the instructions."
     )
     if context_text.strip():
         prompt += (
-            "\n\nThe report arrived by email. Use this only for the document-level "
-            "values (insured, valuation date, insurer) if the PDF itself does not "
-            "state them:\n\n" + _clip(context_text, 4000)
+            "\n\nThe document arrived by email. Use this only for the "
+            "document-level values if the PDF itself does not state them:\n\n"
+            + _clip(context_text, 4000)
         )
     return prompt
 
@@ -148,24 +194,24 @@ def layout_prompt(page_count: int, total_pages: int, context_text: str = "") -> 
 def extraction_instructions(schema: TableSchema, layout: dict) -> str:
     """System-level framing for a table-extraction call."""
     row_columns = [c.name for c in schema.row_columns]
-    return f"""You extract the complete claim table from an insurance loss-run report.
+    return f"""You extract the complete {schema.row_label} table from a {schema.document_label}.
 
-{VERBATIM_CLAUSE}
+{_verbatim_clause(schema.key_columns)}
 
-COMPLETENESS — this is the failure that matters most: extract EVERY claim row on
-the attached pages, from the first to the last. Do not sample, do not summarize,
-do not stop early because the table is long, and never skip rows in the middle.
-Every row present in the pages must appear in your output.
+COMPLETENESS — this is the failure that matters most: extract EVERY {schema.row_label} row
+on the attached pages, from the first to the last. Do not sample, do not
+summarize, do not stop early because the table is long, and never skip rows in
+the middle. Every row present in the pages must appear in your output.
 
 Extract all {len(row_columns)} columns for every row in a single pass. Do not
 return one column at a time.
 
-{OUTPUT_CONTRACT}
+{_output_contract(schema.key_columns)}
 
 Emit exactly these columns, in this order:
 {json.dumps(row_columns)}
 
-DOCUMENT LAYOUT — established from the first pages of this report:
+DOCUMENT LAYOUT — established from the first pages of this document:
 {json.dumps(layout, indent=2)}
 
 Column definitions:
@@ -182,23 +228,26 @@ def extraction_prompt(
     total_pages: int,
     anchors: list[list[str]],
     resume_after: list[str] | None = None,
+    key_columns: tuple[str, ...] = (),
+    document_label: str = "insurance loss-run report",
+    row_label: str = "claim",
 ) -> str:
     """The per-chunk user prompt: position, seam anchors, and resume state."""
     if chunk_total == 1:
         lines = [
-            f"The attached PDF is the complete {total_pages}-page loss-run report.",
-            "Extract every claim row it contains.",
+            f"The attached PDF is the complete {total_pages}-page {document_label}.",
+            f"Extract every {row_label} row it contains.",
         ]
     else:
         lines = [
             f"The attached PDF is chunk {chunk_index} of {chunk_total} from a "
-            f"{total_pages}-page loss-run report: pages {start_page}-{end_page}.",
+            f"{total_pages}-page {document_label}: pages {start_page}-{end_page}.",
         ]
         if chunk_index > 1:
             lines.append(
-                "The claim table continues from the previous chunk. These pages may "
-                "not repeat the table header — use the layout given in the "
-                "instructions to map the columns."
+                f"The {row_label} table continues from the previous chunk. These "
+                "pages may not repeat the table header — use the layout given in "
+                "the instructions to map the columns."
             )
         lines.append(
             "Chunks overlap by a few pages, so the first rows on these pages may "
@@ -206,10 +255,10 @@ def extraction_prompt(
         )
 
     if anchors:
+        key_desc = ", ".join(key_columns) if key_columns else "the row key"
         lines.append(
             "\nAlready extracted by the previous chunk — do NOT emit these rows "
-            "again. Match on the row key [Policy Number, Claim Number, Claimant "
-            "Name] and begin after the last of them:\n"
+            f"again. Match on [{key_desc}] and begin after the last of them:\n"
             + json.dumps(anchors, indent=1)
         )
 
@@ -224,21 +273,6 @@ def extraction_prompt(
     return "\n".join(lines)
 
 
-QA_OUTPUT_CONTRACT = """OUTPUT FORMAT — return one JSON object and nothing else. No prose,
-no markdown fence, no explanation:
-
-{"findings": [{"row": [<Policy Number>, <Claim Number>, <Claimant Name>],
-               "column": "<the column that is wrong>",
-               "correct_value": "<what the document prints, character for character>",
-               "reason": "<one short sentence>"}],
- "missing_rows": [{"row": [<Policy Number>, <Claim Number>, <Claimant Name>],
-                   "reason": "<one short sentence>"}]}
-
-Report ONLY cells that are wrong. A chunk with nothing wrong returns
-`{"findings": [], "missing_rows": []}` — that is the expected answer for a clean
-chunk, not a failure to look."""
-
-
 def qa_instructions(schema: TableSchema) -> str:
     """System-level framing for a QA review call.
 
@@ -247,23 +281,25 @@ def qa_instructions(schema: TableSchema) -> str:
     symbol as an error, and the real findings drown in the noise.
     """
     row_columns = [c.name for c in schema.row_columns]
-    return f"""You are auditing a claim table that has already been extracted from an
-insurance loss-run report. The attached PDF is the exact pages those rows were
-read from. You are NOT extracting the table again.
+    key_example = _key_example(schema.key_columns)
+    doc_level_names = ", ".join(c.name for c in schema.doc_columns) or "a document-level value"
+    return f"""You are auditing a {schema.row_label} table that has already been extracted
+from a {schema.document_label}. The attached PDF is the exact pages those rows
+were read from. You are NOT extracting the table again.
 
 Your job is to find cells that are WRONG, and to say what the document actually
 prints in their place.
 
-{VERBATIM_CLAUSE}
+{_verbatim_clause(schema.key_columns)}
 
 WHAT COUNTS AS WRONG
-- A value that does not appear in the document for that claim — an invented
+- A value that does not appear in the document for that row — an invented
   figure, a name or number the page does not carry.
-- A value read out of the wrong column, or off a neighbouring claim's row.
+- A value read out of the wrong column, or off a neighbouring row.
 - A value the document prints differently: a changed digit or letter, a dropped
   or added leading zero, a "corrected" spelling. `C003` read as `C0000003` and
   `McAllister` read as `MacAllister` are both errors.
-- A cell carrying a value where the document prints none for that claim.
+- A cell carrying a value where the document prints none for that row.
 
 WHAT IS NOT WRONG — do not report these:
 - Formatting. The values below have already been rendered into a fixed form:
@@ -271,25 +307,25 @@ WHAT IS NOT WRONG — do not report these:
   thousands separators and trailing zeros removed, and accounting parentheses
   turned into a minus sign. `$1,200.00` correctly appears below as `1200`, and
   `(450.75)` as `-450.75`. A difference that is only formatting is not a finding.
-- `N/A` in a cell the document genuinely leaves empty for that claim.
-- A document-level value repeated on every row — the insured, the valuation
-  date and the policy total are meant to repeat.
+- `N/A` in a cell the document genuinely leaves empty for that row.
+- A document-level value repeated on every row — {doc_level_names} are meant to
+  repeat.
 
 PROPOSING A CORRECTION
 - `correct_value` must be copied from the attached pages character for character.
   Never propose a value you cannot point at on the page. If you believe a cell is
   wrong but cannot read what belongs there, leave it out rather than guessing.
 - Use `N/A` as `correct_value` when the document prints nothing for that cell.
-- `row` identifies which row you are correcting: give its
-  [Policy Number, Claim Number, Claimant Name] exactly as they appear in the
-  table below, even when one of those three is itself the cell you are correcting.
+- `row` identifies which row you are correcting: give its [{key_example}]
+  exactly as they appear in the table below, even when one of those is itself
+  the cell you are correcting.
 
 MISSING ROWS
-Also list any claim row printed on the attached pages that is absent from the
-table below. These are reported to a human rather than added to the table, so
-give only the row key and why you believe it was missed.
+Also list any {schema.row_label} row printed on the attached pages that is
+absent from the table below. These are reported to a human rather than added
+to the table, so give only the row key and why you believe it was missed.
 
-{QA_OUTPUT_CONTRACT}
+{_qa_output_contract(schema.key_columns)}
 
 The columns under review, in the order the rows below use:
 {json.dumps(row_columns)}
@@ -310,16 +346,15 @@ def qa_prompt(
     rows: list[list[str]],
     batch_index: int = 1,
     batch_total: int = 1,
+    document_label: str = "insurance loss-run report",
 ) -> str:
     """The per-chunk user prompt: which pages, and the rows read from them."""
     if chunk_total == 1:
-        lines = [
-            f"The attached PDF is the complete {total_pages}-page loss-run report."
-        ]
+        lines = [f"The attached PDF is the complete {total_pages}-page {document_label}."]
     else:
         lines = [
             f"The attached PDF is pages {start_page}-{end_page} of a "
-            f"{total_pages}-page loss-run report (chunk {chunk_index} of "
+            f"{total_pages}-page {document_label} (chunk {chunk_index} of "
             f"{chunk_total})."
         ]
 
@@ -341,11 +376,11 @@ def qa_prompt(
     return "\n".join(lines)
 
 
-def text_extraction_prompt(text: str, chunk_label: str = "") -> str:
+def text_extraction_prompt(text: str, chunk_label: str = "", row_label: str = "claim") -> str:
     """Prompt for a text-only source (an email body or a spreadsheet)."""
-    header = f"The loss-run content below is {chunk_label}. " if chunk_label else ""
+    header = f"The content below is {chunk_label}. " if chunk_label else ""
     return (
-        f"{header}Extract every claim row it contains.\n\n"
+        f"{header}Extract every {row_label} row it contains.\n\n"
         f"--- BEGIN DOCUMENT ---\n{text}\n--- END DOCUMENT ---"
     )
 

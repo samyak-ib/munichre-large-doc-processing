@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 
 from .extract import RawRow
-from .schema_loader import BACKFILL_FROM_LAYOUT, KEY_COLUMNS, TableSchema
+from .schema_loader import KEY_COLUMNS, TableSchema
 
 NA = "N/A"
 _EMPTY_VALUES = {"", "n/a", "na", "none", "null", "-", "--"}
@@ -34,23 +34,28 @@ class MergeResult:
     conflicts: list[Conflict] = field(default_factory=list)
     duplicate_keys: int = 0
 
-    def by_key(self) -> dict[tuple[str, ...], dict[str, str]]:
-        return {normalize_key(r): r for r in self.rows}
+    def by_key(self, key_columns: tuple[str, ...] = KEY_COLUMNS) -> dict[tuple[str, ...], dict[str, str]]:
+        return {normalize_key(r, key_columns): r for r in self.rows}
 
 
 def is_empty(value: str | None) -> bool:
     return value is None or value.strip().lower() in _EMPTY_VALUES
 
 
-def normalize_key(values: dict[str, str]) -> tuple[str, ...]:
+def normalize_key(
+    values: dict[str, str], key_columns: tuple[str, ...] = KEY_COLUMNS
+) -> tuple[str, ...]:
     """Case- and whitespace-insensitive row identity.
 
     Whitespace is removed outright rather than collapsed: models disagree on
     whether a wrapped identifier is `001-WC19A-78355` or `001- WC19A-78355`, and
     treating those as different claims splits one row into two. Only the key used
     for merging and diffing is stripped; the printed value keeps its spacing.
+
+    `key_columns` defaults to the loss run's (Policy Number, Claim Number,
+    Claimant Name); callers holding a different schema pass `schema.key_columns`.
     """
-    return tuple(_key_part(values.get(name, "")) for name in KEY_COLUMNS)
+    return tuple(_key_part(values.get(name, "")) for name in key_columns)
 
 
 def _key_part(value: str) -> str:
@@ -67,7 +72,7 @@ def merge_rows(raw_rows: list[RawRow], schema: TableSchema) -> MergeResult:
     order: list[tuple[str, ...]] = []
 
     for raw in raw_rows:
-        key = normalize_key(raw.values)
+        key = normalize_key(raw.values, schema.key_columns)
         source = f"{raw.model} {raw.chunk}"
         if key not in merged:
             merged[key] = dict(raw.values)
@@ -126,16 +131,16 @@ def finalize_rows(
 ) -> list[dict[str, str]]:
     """Turn one model's per-chunk rows into its final table.
 
-    Merge the seams, carry a block-level policy number down where the layout
-    says there is one, then fill the document-level values. Formatting is left
-    to `cleaning.clean_table`, which the caller applies last.
+    Merge the seams, carry a block-level group value down where the layout says
+    there is one, then fill the document-level values. Formatting is left to
+    `cleaning.clean_table`, which the caller applies last.
     """
     merged = merge_rows(raw_rows, schema)
     rows = [normalize_row(r, schema) for r in merged.rows]
     if block_header_policy:
-        filled = fill_block_policy_numbers(rows)
+        filled = fill_block_policy_numbers(rows, schema.group_column)
         if filled and log:
-            log(f"  filled {filled} block-level policy numbers")
+            log(f"  filled {filled} block-level {schema.group_column!r} values")
     stamp_document_values(rows, document_values or {}, schema)
     return rows
 
@@ -143,12 +148,12 @@ def finalize_rows(
 def stamp_document_values(
     rows: list[dict[str, str]], document_values: dict[str, str], schema: TableSchema
 ) -> None:
-    """Fill Insured and Valuation Date from layout discovery, in place.
+    """Fill the schema's backfill columns from layout discovery, in place.
 
-    Only rows that came back without a value are touched, so a valuation date the
+    Only rows that came back without a value are touched, so a value the
     extraction pass read from a section header outranks the document-level one.
     """
-    names = {n for n in BACKFILL_FROM_LAYOUT if n in set(schema.names)}
+    names = schema.backfill_columns
     for row in rows:
         for name in names:
             if is_empty(row.get(name)):
@@ -156,19 +161,21 @@ def stamp_document_values(
                 row[name] = value.strip() if value and not is_empty(value) else NA
 
 
-def fill_block_policy_numbers(rows: list[dict[str, str]]) -> int:
-    """Carry a block-level policy number down to the rows beneath it.
+def fill_block_policy_numbers(rows: list[dict[str, str]], column: str = "Policy Number") -> int:
+    """Carry a block-level value down to the rows beneath it.
 
-    Used when layout discovery reports the policy number sits above a group of
-    claim rows rather than in its own column. Returns how many rows were filled.
+    Used when layout discovery reports that `column` sits above a group of rows
+    rather than in its own column — the loss run's Policy Number by default, or
+    whatever a custom schema's `schema.group_column` names. Returns how many
+    rows were filled.
     """
     filled = 0
     current = ""
     for row in rows:
-        value = row.get("Policy Number", "")
+        value = row.get(column, "")
         if not is_empty(value):
             current = value
         elif current:
-            row["Policy Number"] = current
+            row[column] = current
             filled += 1
     return filled

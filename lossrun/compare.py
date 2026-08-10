@@ -229,7 +229,7 @@ def collect(
             if costs is not None:
                 telemetry["cost_input_usd"], telemetry["cost_output_usd"] = costs
             rows = read_shipped_rows(workbook_path)
-            golden = load_golden(golden_path, document)
+            golden = load_golden(golden_path, document, schema)
             model = str(telemetry.get("models") or "").split(",")[0].strip()
             group.documents.append(
                 DocumentComparison(

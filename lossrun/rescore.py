@@ -95,7 +95,7 @@ def policy_influence(
     Dropping hard rows out of the match raises cell accuracy on the easy ones
     that remain, so a delta read without the row count reads backwards.
     """
-    goldens = {r.document: load_golden(golden_path, r.document) for r in records}
+    goldens = {r.document: load_golden(golden_path, r.document, schema) for r in records}
 
     def overall(policy: ScoringPolicy) -> tuple[int, int, int, int]:
         compared = correct = matched = golden_rows = 0

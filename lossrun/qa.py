@@ -127,6 +127,7 @@ def review(
             rows=[[row.get(c, "") for c in columns] for row in batch.rows],
             batch_index=batch.index,
             batch_total=batch.total,
+            document_label=schema.document_label,
         )
         label = batch.chunk.label if batch.total == 1 else f"{batch.chunk.label} part {batch.index}"
         try:
@@ -151,7 +152,7 @@ def review(
         if not run.ok:
             result.errors.append(f"{label}: {run.error_code or run.status}")
             return
-        _collect(run.output_text, batch, result)
+        _collect(run.output_text, batch, result, schema.key_columns)
 
     with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
         list(pool.map(one, batches))
@@ -172,7 +173,7 @@ def apply(
     so it has to survive into the Issues sheet rather than being dropped here.
     """
     haystack = text_haystack(page_texts)
-    by_key = {normalize_key(row): row for row in rows}
+    by_key = {normalize_key(row, schema.key_columns): row for row in rows}
     names = set(schema.names)
     applied = 0
 
@@ -197,7 +198,12 @@ def apply(
         ):
             finding.verdict = UNVERIFIED
             continue
-        value = clean_value(finding.column, finding.proposed_value)
+        value = clean_value(
+            finding.column,
+            finding.proposed_value,
+            date_columns=schema.date_columns,
+            money_columns=schema.money_columns,
+        )
         if value == current:
             finding.verdict = NO_CHANGE
             continue
@@ -208,19 +214,22 @@ def apply(
     return applied
 
 
-def row_chunk_pages(raw_rows) -> list[str]:
+def row_chunk_pages(raw_rows, key_columns: tuple[str, ...] = KEY_COLUMNS) -> list[str]:
     """The chunk each merged row came from, in merge order.
 
     Merging keeps the first row seen per key and preserves that order, so walking
     the raw rows the same way lines this list up with the final table one for one.
-    Positional rather than keyed, because filling a block-level policy number
-    rewrites a key column after the merge — a lookup by key would miss exactly
-    the rows that were repaired.
+    Positional rather than keyed, because filling a block-level value rewrites a
+    key column after the merge — a lookup by key would miss exactly the rows
+    that were repaired.
+
+    `key_columns` defaults to the loss run's; a caller holding a different
+    schema passes `schema.key_columns`.
     """
     seen: set[tuple[str, ...]] = set()
     pages: list[str] = []
     for raw in raw_rows:
-        key = normalize_key(raw.values)
+        key = normalize_key(raw.values, key_columns)
         if key in seen:
             continue
         seen.add(key)
@@ -295,19 +304,21 @@ def _split_to_budget(
     return parts or [[]]
 
 
-def _collect(text: str, batch: _Batch, result: QAResult) -> None:
+def _collect(
+    text: str, batch: _Batch, result: QAResult, key_columns: tuple[str, ...] = KEY_COLUMNS
+) -> None:
     payload = _payload(text)
     if payload is None:
         result.errors.append(f"{batch.chunk.label}: response was not usable JSON")
         return
 
-    known = {normalize_key(row): row for row in batch.rows}
+    known = {normalize_key(row, key_columns): row for row in batch.rows}
     for raw in payload.get("findings") or []:
-        finding = _finding(raw, batch.chunk.pages)
+        finding = _finding(raw, batch.chunk.pages, key_columns)
         if finding is not None:
             result.findings.append(finding)
     for raw in payload.get("missing_rows") or []:
-        key = _key(raw.get("row"))
+        key = _key(raw.get("row"), key_columns)
         # A key the batch already holds is the model re-reporting a row it was
         # given, not one that was missed.
         if key and key not in known:
@@ -316,10 +327,10 @@ def _collect(text: str, batch: _Batch, result: QAResult) -> None:
             )
 
 
-def _finding(raw: object, pages: str) -> QAFinding | None:
+def _finding(raw: object, pages: str, key_columns: tuple[str, ...] = KEY_COLUMNS) -> QAFinding | None:
     if not isinstance(raw, dict):
         return None
-    key = _key(raw.get("row"))
+    key = _key(raw.get("row"), key_columns)
     column = str(raw.get("column", "")).strip()
     if not key or not column:
         return None
@@ -333,12 +344,12 @@ def _finding(raw: object, pages: str) -> QAFinding | None:
     )
 
 
-def _key(value: object) -> tuple[str, ...] | None:
-    """Turn the model's `[policy, claim, claimant]` into a merge key."""
+def _key(value: object, key_columns: tuple[str, ...] = KEY_COLUMNS) -> tuple[str, ...] | None:
+    """Turn the model's row-key array into a merge key."""
     if not isinstance(value, list) or not value:
         return None
     parts = [str(v) if v is not None else "" for v in value]
-    return normalize_key(dict(zip(KEY_COLUMNS, parts)))
+    return normalize_key(dict(zip(key_columns, parts)), key_columns)
 
 
 def _payload(text: str) -> dict | None:

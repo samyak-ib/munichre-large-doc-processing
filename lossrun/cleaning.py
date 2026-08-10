@@ -69,18 +69,32 @@ def clean_table(rows: list[dict[str, str]], schema: TableSchema) -> list[dict[st
 def clean_row(row: dict[str, str], schema: TableSchema) -> dict[str, str]:
     cleaned: dict[str, str] = {}
     for column in schema.columns:
-        cleaned[column.name] = clean_value(column.name, row.get(column.name, ""))
+        cleaned[column.name] = clean_value(
+            column.name,
+            row.get(column.name, ""),
+            date_columns=schema.date_columns,
+            money_columns=schema.money_columns,
+        )
     return cleaned
 
 
-def clean_value(column: str, value: object) -> str:
-    """Clean one cell. Unparseable input is returned as-is, never discarded."""
+def clean_value(
+    column: str,
+    value: object,
+    date_columns: tuple[str, ...] = DATE_COLUMNS,
+    money_columns: tuple[str, ...] = MONEY_COLUMNS,
+) -> str:
+    """Clean one cell. Unparseable input is returned as-is, never discarded.
+
+    `date_columns`/`money_columns` default to the loss run's; a caller holding a
+    different schema passes `schema.date_columns`/`schema.money_columns`.
+    """
     text = _collapse(value)
     if text.lower() in _EMPTY:
         return NA
-    if column in DATE_COLUMNS:
+    if column in date_columns:
         return _format_date(text)
-    if column in MONEY_COLUMNS:
+    if column in money_columns:
         return _format_money(text)
     return text
 

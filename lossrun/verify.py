@@ -66,13 +66,18 @@ def appears_verbatim(value: str, haystack: str) -> bool:
 
 
 def verify_keys(
-    rows: list[dict[str, str]], page_texts: list[str]
+    rows: list[dict[str, str]],
+    page_texts: list[str],
+    identifier_columns: tuple[str, ...] = VERIFIED_COLUMNS,
 ) -> tuple[list[KeyIssue], int]:
-    """Check every key value against the document text.
+    """Check every identifier value against the document text.
 
     Returns the issues found and how many values were checked. An empty document
     text yields no issues and a zero count, so callers can tell "clean" apart
     from "could not check".
+
+    `identifier_columns` defaults to the loss run's; a caller holding a
+    different schema passes `schema.identifier_columns`.
     """
     haystack = text_haystack(page_texts)
     if not haystack.strip():
@@ -83,7 +88,7 @@ def verify_keys(
     checked = 0
 
     for index, row in enumerate(rows):
-        for column in VERIFIED_COLUMNS:
+        for column in identifier_columns:
             value = row.get(column, "")
             if is_empty(value):
                 continue

@@ -1,10 +1,14 @@
 # lossrun
 
-Extracts the loss-run claim table defined by `schema.json` into Excel. Calls
-OpenAI and Google directly, falling back to the SuperApp Responses API for any
-model whose vendor key is absent. Standalone — every backend is reached as an
-API, with no dependency on the monorepo.
+Extracts a long claim/line-item table into Excel and reviews it against the
+source document. Ships tuned for the loss-run claim table defined by
+`schema.json`, but the pipeline itself has nothing insurance-specific about
+it — point `--schema` at a plain column list to extract a different table
+entirely. Calls OpenAI and Google directly, falling back to the SuperApp
+Responses API for any model whose vendor key is absent. Standalone — every
+backend is reached as an API, with no dependency on the monorepo.
 
+- [docs/COLUMNS.md](docs/COLUMNS.md) — extracting a different table: the column-list format, a worked example, and what stays the same
 - [docs/APPROACH.md](docs/APPROACH.md) — the pipeline, chunking logic, column hints, and config contract
 - [docs/PIPELINE.md](docs/PIPELINE.md) — the flow end to end, and where each decision came from
 - [docs/CHALLENGES.md](docs/CHALLENGES.md) — known constraints and open questions
@@ -85,7 +89,7 @@ ledgers.
 | `--model MODEL` | Override the extracting model |
 | `--qa-model MODEL` | Model that reviews the extracted table (default: the extracting model) |
 | `--config PATH` | Alternate `config.yaml` |
-| `--schema PATH` | Alternate `schema.json` |
+| `--schema PATH` | Alternate `schema.json`, or a plain column-list file to extract a different table — see [docs/COLUMNS.md](docs/COLUMNS.md) |
 | `--out DIR` | Output root (default `out/`); runs land in `<out>/<route>_calls/` |
 | `--base-url URL` | Alternate API base |
 | `--effort LEVEL` | Force one reasoning effort across every model |

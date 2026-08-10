@@ -23,14 +23,23 @@ from .telemetry import Telemetry
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lossrun",
-        description="Extract a loss-run claim table into Excel via the SuperApp Responses API.",
+        description=(
+            "Extract a long claim/line-item table into Excel and review it against "
+            "the source document. Ships tuned for insurance loss runs; point "
+            "--schema at a column-list file (docs/COLUMNS.md) for any other table."
+        ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     extract = sub.add_parser("extract", help="extract one or more documents")
     extract.add_argument("inputs", nargs="+", type=Path, help="pdf/eml/msg files or a directory")
     extract.add_argument("--config", type=Path, help="path to config.yaml")
-    extract.add_argument("--schema", type=Path, help="path to schema.json")
+    extract.add_argument(
+        "--schema",
+        type=Path,
+        help="path to schema.json, or a plain column-list YAML/JSON file (see "
+        "docs/COLUMNS.md) to extract a different table entirely",
+    )
     extract.add_argument(
         "--out",
         type=Path,
@@ -89,14 +98,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     schema_cmd = sub.add_parser("schema", help="print the resolved column contract")
-    schema_cmd.add_argument("--schema", type=Path, help="path to schema.json")
+    schema_cmd.add_argument(
+        "--schema",
+        type=Path,
+        help="path to schema.json, or a plain column-list YAML/JSON file (see "
+        "docs/COLUMNS.md) to extract a different table entirely",
+    )
 
     score_cmd = sub.add_parser(
         "score",
         help="re-score finished runs from their workbooks, without any API calls",
     )
     score_cmd.add_argument("run_dirs", nargs="+", type=Path, help="out/<doc>_<timestamp> directories")
-    score_cmd.add_argument("--schema", type=Path, help="path to schema.json")
+    score_cmd.add_argument(
+        "--schema",
+        type=Path,
+        help="path to schema.json, or a plain column-list YAML/JSON file (see "
+        "docs/COLUMNS.md) to extract a different table entirely",
+    )
     score_cmd.add_argument(
         "--golden",
         type=Path,
@@ -113,7 +132,12 @@ def build_parser() -> argparse.ArgumentParser:
         "results", help="write a shareable results workbook for a batch of runs"
     )
     results_cmd.add_argument("run_dirs", nargs="+", type=Path, help="out/<doc>_<timestamp> directories")
-    results_cmd.add_argument("--schema", type=Path, help="path to schema.json")
+    results_cmd.add_argument(
+        "--schema",
+        type=Path,
+        help="path to schema.json, or a plain column-list YAML/JSON file (see "
+        "docs/COLUMNS.md) to extract a different table entirely",
+    )
     results_cmd.add_argument(
         "--golden", type=Path, default=DEFAULT_GOLDEN_PATH, help="golden workbook"
     )
@@ -144,7 +168,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="a labelled set of runs, e.g. consensus=out/direct_calls. PATH is a "
         "run directory or a folder of them; repeat the label to add more paths",
     )
-    compare_cmd.add_argument("--schema", type=Path, help="path to schema.json")
+    compare_cmd.add_argument(
+        "--schema",
+        type=Path,
+        help="path to schema.json, or a plain column-list YAML/JSON file (see "
+        "docs/COLUMNS.md) to extract a different table entirely",
+    )
     compare_cmd.add_argument(
         "--golden", type=Path, default=DEFAULT_GOLDEN_PATH, help="golden workbook"
     )
@@ -185,10 +214,28 @@ def main(argv: list[str] | None = None) -> int:
 
 def _cmd_schema(args: argparse.Namespace) -> int:
     schema = load_schema(args.schema)
-    print(f"{len(schema.columns)} columns, {schema.prompt_bytes() / 1024:.1f} KiB of prompts\n")
+    print(
+        f"{len(schema.columns)} columns, {schema.prompt_bytes() / 1024:.1f} KiB of prompts  "
+        f"— {schema.row_label!r} rows from: {schema.document_label}\n"
+    )
+    print(f"key columns (row identity):  {', '.join(schema.key_columns)}")
+    print(f"matched to golden data on:   {schema.match_column}")
+    print(f"block-header carry-down on:  {schema.group_column}\n")
     for column in schema.columns:
         scope = "document" if column.doc_level else "row"
-        print(f"  {column.name:<32} {scope:<9} {len(column.prompt):>5} bytes of prompt")
+        roles = ",".join(
+            role
+            for role, on in (
+                ("key", column.key),
+                ("identifier", column.identifier and not column.key),
+                ("backfill", column.backfill),
+            )
+            if on
+        )
+        print(
+            f"  {column.name:<32} {scope:<9} {column.type:<6} {roles:<24} "
+            f"{len(column.prompt):>5} bytes of prompt"
+        )
     return 0
 
 
@@ -200,7 +247,7 @@ def _cmd_score(args: argparse.Namespace) -> int:
 
     total_cells = total_correct = total_matched = total_golden = 0
     for record in records:
-        golden = load_golden(args.golden, record.document)
+        golden = load_golden(args.golden, record.document, schema)
         if not golden:
             print(f"{record.document}: no golden entry")
             continue
@@ -245,7 +292,7 @@ def _cmd_results(args: argparse.Namespace) -> int:
         if args.batch
         else batch_ids_for(ledger, [r.run_dir for r in records])
     )
-    ledger_rows, call_rows = read_batch_telemetry(ledger, batches)
+    ledger_rows, call_rows, run_rows = read_batch_telemetry(ledger, batches)
     batch_id = ", ".join(sorted(batches))
 
     path = write_results(
@@ -256,6 +303,7 @@ def _cmd_results(args: argparse.Namespace) -> int:
             golden_path=args.golden,
             ledger_rows=ledger_rows,
             call_rows=call_rows,
+            run_rows=run_rows,
         ),
         args.out,
         version=args.version,
@@ -435,7 +483,7 @@ def _publish(
     try:
         schema = load_schema(args.schema)
         records = [load_run(d, schema) for d in run_dirs]
-        ledger_rows, call_rows = read_batch_telemetry(ledger, batch_id)
+        ledger_rows, call_rows, run_rows = read_batch_telemetry(ledger, batch_id)
         return write_results(
             BatchResults(
                 batch_id=batch_id,
@@ -444,6 +492,7 @@ def _publish(
                 golden_path=args.golden or DEFAULT_GOLDEN_PATH,
                 ledger_rows=ledger_rows,
                 call_rows=call_rows,
+                run_rows=run_rows,
             ),
             args.results_out,
             filename=filename,

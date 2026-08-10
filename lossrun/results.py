@@ -45,12 +45,31 @@ DOCUMENT_COLUMNS = (
     "pages",
     "model",
     "rows_golden",
+    "rows_extracted",
     "rows_matched",
     "row_recall_pct",
     "cells_scored",
     "cells_correct",
     "cell_accuracy_pct",
+    # Mean per-row cell accuracy — "how correct is a typical row" — next to
+    # `cell_accuracy_pct`'s pooled figure, which leans toward rows carrying
+    # more scorable columns. See accuracy.AccuracyResult.row_accuracy.
+    "row_accuracy_matched_pct",
+    "row_accuracy_overall_pct",
     "exact_row_pct",
+    # Per-document telemetry, straight from the ledger's `Runs` sheet: what one
+    # document cost to extract and review, and at what rate per page.
+    "input_tokens",
+    "output_tokens",
+    "input_tokens_per_page",
+    "output_tokens_per_page",
+    "cost_input_usd",
+    "cost_output_usd",
+    "cost_total_usd",
+    # Wall-clock time spent in each stage, summed across every call the stage
+    # made for this document (chunks, resumes, and split QA batches all count).
+    "extract_time_s",
+    "qa_time_s",
 )
 
 # Why each assumption exists, in the words a first-time reader needs. Keyed by
@@ -150,13 +169,20 @@ class BatchResults:
     golden_path: Path
     ledger_rows: Sequence[dict[str, Any]] = ()
     call_rows: Sequence[Sequence[Any]] = ()
+    # The ledger's `Runs` sheet for this batch: one row per document, already
+    # carrying per-page token rates and per-document cost from `Telemetry.summary`.
+    run_rows: Sequence[dict[str, Any]] = ()
 
     def document_rows(self) -> list[dict[str, Any]]:
+        telemetry_by_document = {row.get("document"): row for row in self.run_rows}
+        stage_time_by_document = _stage_seconds_by_document(self.call_rows)
         rows = []
         for record in self.records:
-            golden = load_golden(self.golden_path, record.document)
+            golden = load_golden(self.golden_path, record.document, self.schema)
             if not golden:
                 continue
+            telemetry = telemetry_by_document.get(record.document, {})
+            stage_time = stage_time_by_document.get(record.document, {})
             for model, result in record.score_all(golden, self.schema, DEFAULT_POLICY).items():
                 rows.append(
                     {
@@ -164,12 +190,24 @@ class BatchResults:
                         "pages": record.pages,
                         "model": model,
                         "rows_golden": result.rows_golden,
+                        "rows_extracted": result.rows_extracted,
                         "rows_matched": result.rows_matched,
                         "row_recall_pct": round(result.row_recall, 1),
                         "cells_scored": result.cells_compared,
                         "cells_correct": result.cells_correct,
                         "cell_accuracy_pct": round(result.cell_accuracy, 1),
+                        "row_accuracy_matched_pct": round(result.row_accuracy, 1),
+                        "row_accuracy_overall_pct": round(result.row_accuracy_overall, 1),
                         "exact_row_pct": round(result.exact_row_rate, 1),
+                        "input_tokens": telemetry.get("input_tokens", ""),
+                        "output_tokens": telemetry.get("output_tokens", ""),
+                        "input_tokens_per_page": telemetry.get("input_tokens_per_page", ""),
+                        "output_tokens_per_page": telemetry.get("output_tokens_per_page", ""),
+                        "cost_input_usd": telemetry.get("cost_input_usd", ""),
+                        "cost_output_usd": telemetry.get("cost_output_usd", ""),
+                        "cost_total_usd": telemetry.get("cost_total_usd", ""),
+                        "extract_time_s": round(stage_time.get("extract", 0.0), 1),
+                        "qa_time_s": round(stage_time.get("qa", 0.0), 1),
                     }
                 )
         return rows
@@ -183,7 +221,7 @@ class BatchResults:
         """
         totals: dict[str, list[int]] = {}
         for record in self.records:
-            golden = load_golden(self.golden_path, record.document)
+            golden = load_golden(self.golden_path, record.document, self.schema)
             if not golden:
                 continue
             for result in record.score_all(golden, self.schema, DEFAULT_POLICY).values():
@@ -208,6 +246,11 @@ class BatchResults:
         correct = sum(r["cells_correct"] for r in rows)
         golden = sum(r["rows_golden"] for r in rows)
         matched = sum(r["rows_matched"] for r in rows)
+        # Every document this batch ran, golden or not — a scored subset would
+        # under-report what the batch actually cost.
+        cost_input = sum(_as_float(r.get("cost_input_usd")) for r in self.run_rows)
+        cost_output = sum(_as_float(r.get("cost_output_usd")) for r in self.run_rows)
+        cost_total = sum(_as_float(r.get("cost_total_usd")) for r in self.run_rows)
         return {
             "batch_id": self.batch_id,
             "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -219,12 +262,46 @@ class BatchResults:
             "cells_scored": cells,
             "cells_correct": correct,
             "cell_accuracy_pct": round(correct / cells * 100, 1) if cells else 0.0,
+            "documents_run": len(self.run_rows),
+            "cost_input_usd_total": round(cost_input, 4),
+            "cost_output_usd_total": round(cost_output, 4),
+            "cost_total_usd_total": round(cost_total, 4),
         }
 
 
 def batch_filename(version: str = "v1", stamp: str | None = None) -> str:
     """The workbook's name, fixed once per batch so it can be rewritten in place."""
     return f"{version}_{stamp or time.strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+
+def _as_float(value: Any) -> float:
+    if value in (None, ""):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _stage_seconds_by_document(
+    call_rows: Sequence[Sequence[Any]],
+) -> dict[str, dict[str, float]]:
+    """Wall-clock time per document, summed per stage across every call it made.
+
+    A stage can be more than one call — a chunked extraction, a truncation
+    resume, a QA review split across parts — so this sums rather than takes
+    the single `latency_s` a naive reading of "the extract call" would assume.
+    """
+    totals: dict[str, dict[str, float]] = {}
+    for raw in call_rows:
+        call = dict(zip(CALL_COLUMNS, raw))
+        document = call.get("document")
+        if not document:
+            continue
+        stage = str(call.get("stage", ""))
+        bucket = totals.setdefault(document, {})
+        bucket[stage] = bucket.get(stage, 0.0) + _as_float(call.get("latency_s"))
+    return totals
 
 
 def write_results(

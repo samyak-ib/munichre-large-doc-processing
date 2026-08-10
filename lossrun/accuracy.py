@@ -53,8 +53,12 @@ GOLDEN_TO_SCHEMA = {
 }
 
 FILENAME_COLUMN = "Filename"
-MATCH_COLUMN = "Claim Number"
 MONEY_TOLERANCE = 0.01
+
+# Identifier columns tolerant of a leading-zero mismatch — the default for
+# `values_match` when no schema-specific set is given. A caller holding a
+# schema passes `schema.identifier_columns` instead.
+DEFAULT_IDENTIFIER_COLUMNS = ("Claim Number", "Occurrence ID", "Policy Number")
 
 # Two descriptions this similar are the same description. Calibrated against the
 # recorded mismatches: it accepts golden's 50-character truncations and refuses
@@ -263,15 +267,29 @@ class AccuracyResult:
         return row
 
 
-def load_golden(path: Path, document_name: str) -> list[dict[str, str]] | None:
+def load_golden(
+    path: Path,
+    document_name: str,
+    schema: TableSchema | None = None,
+    column_map: dict[str, str] | None = None,
+) -> list[dict[str, str]] | None:
     """Golden rows for one document, or None when the file has no entry for it.
 
     Every sheet is read. The golden workbook grew a second sheet when the sample
     set was extended, and taking only the first silently scores the new documents
     as having no golden at all.
+
+    `column_map` (golden header -> schema column) wins when given. Otherwise, a
+    `schema` maps its own column names to themselves plus the loss-run aliases
+    below wherever the aliased column exists in that schema — which reproduces
+    the loss-run mapping exactly for the loss-run schema, and falls back to
+    identity (golden headers matching the schema's own column names) for any
+    other one. With neither argument, the loss-run aliases are used outright,
+    which is what every existing caller relies on.
     """
     if not path.exists():
         return None
+    mapping = column_map or _column_map_for(schema)
     by_document = _golden_index(path)
     filename = _resolve_golden_filename(list(by_document), document_name)
     if filename is None:
@@ -279,10 +297,18 @@ def load_golden(path: Path, document_name: str) -> list[dict[str, str]] | None:
     return [
         {
             schema_column: _as_text(record.get(golden_column))
-            for golden_column, schema_column in GOLDEN_TO_SCHEMA.items()
+            for golden_column, schema_column in mapping.items()
         }
         for record in by_document[filename]
     ]
+
+
+def _column_map_for(schema: TableSchema | None) -> dict[str, str]:
+    if schema is None:
+        return GOLDEN_TO_SCHEMA
+    mapping = {name: name for name in schema.names}
+    mapping.update({g: s for g, s in GOLDEN_TO_SCHEMA.items() if s in schema.names})
+    return mapping
 
 
 def _golden_index(path: Path) -> dict[str, list[dict[str, Any]]]:
@@ -352,8 +378,13 @@ def score(
     model: str,
     policy: ScoringPolicy = DEFAULT_POLICY,
 ) -> AccuracyResult:
-    """Score one model's table against golden, matched on claim number."""
-    scored_columns = [c for c in schema.names if c in set(GOLDEN_TO_SCHEMA.values())]
+    """Score one model's table against golden, matched on `schema.match_column`."""
+    match_column = schema.match_column
+    # Golden only ever carries the columns its own load_golden mapping
+    # populated; a column absent from every golden row (no mapping reached it)
+    # is left out rather than scored as permanently blank.
+    golden_columns = {k for row in golden for k in row}
+    scored_columns = [c for c in schema.names if c in golden_columns]
     result = AccuracyResult(
         model=model,
         rows_golden=len(golden),
@@ -361,8 +392,8 @@ def score(
         columns={c: ColumnScore(c) for c in scored_columns},
     )
 
-    golden_by_key = {_match_key(r): r for r in golden}
-    extracted_by_key = {_match_key(r): r for r in extracted}
+    golden_by_key = {_match_key(r, match_column): r for r in golden}
+    extracted_by_key = {_match_key(r, match_column): r for r in extracted}
     # Excel stores a numeric-looking claim id as a number, so golden can hold
     # 40512146091 where the document prints 040512146091. Index the loose form
     # too, or a correct extraction scores zero for a spreadsheet's typing rule.
@@ -407,7 +438,15 @@ def score(
             score_entry = result.columns[column]
             score_entry.compared += 1
             row_compared += 1
-            if values_match(column, actual, expected, policy):
+            if values_match(
+                column,
+                actual,
+                expected,
+                policy,
+                money_columns=schema.money_columns,
+                date_columns=schema.date_columns,
+                identifier_columns=schema.identifier_columns,
+            ):
                 score_entry.correct += 1
                 row_correct_cells += 1
             else:
@@ -415,7 +454,7 @@ def score(
                 result.mismatches.append(
                     {
                         "model": model,
-                        "claim_number": found.get(MATCH_COLUMN, ""),
+                        "claim_number": found.get(match_column, ""),
                         "column": column,
                         "extracted": actual,
                         "golden": expected,
@@ -467,12 +506,24 @@ _US_STATES = {
 
 
 def values_match(
-    column: str, actual: str, expected: str, policy: ScoringPolicy = DEFAULT_POLICY
+    column: str,
+    actual: str,
+    expected: str,
+    policy: ScoringPolicy = DEFAULT_POLICY,
+    *,
+    money_columns: tuple[str, ...] = MONEY_COLUMNS,
+    date_columns: tuple[str, ...] = DATE_COLUMNS,
+    identifier_columns: tuple[str, ...] = DEFAULT_IDENTIFIER_COLUMNS,
 ) -> bool:
-    """Compare one cell, using the comparison the column's type deserves."""
+    """Compare one cell, using the comparison the column's type deserves.
+
+    `money_columns`/`date_columns`/`identifier_columns` default to the loss
+    run's; a caller holding a different schema passes `schema.money_columns`
+    etc. — `score()` always does.
+    """
     if is_empty(actual) and is_empty(expected):
         return True
-    if column in MONEY_COLUMNS and policy.money_empty_is_zero:
+    if column in money_columns and policy.money_empty_is_zero:
         # A blank money cell and an explicit 0 are the same fact. The schema
         # tells the model to return N/A when it finds nothing; golden writes 0.
         # Scoring that disagreement as an error measures the two conventions,
@@ -481,7 +532,7 @@ def values_match(
             return True
     if is_empty(actual) or is_empty(expected):
         return False
-    if column in {"Claim Number", "Occurrence ID", "Policy Number"} and policy.leading_zero_tolerant_ids:
+    if column in identifier_columns and policy.leading_zero_tolerant_ids:
         # Same spreadsheet coercion as the match key: a purely numeric id that
         # lost its leading zero in golden is not an extraction error.
         if _identifiers_match(actual, expected):
@@ -494,11 +545,11 @@ def values_match(
         return _state_code(actual) == _state_code(expected)
     if column == "Description" and policy.semantic_description:
         return _descriptions_match(actual, expected)
-    if column in MONEY_COLUMNS:
+    if column in money_columns:
         left, right = _as_money(actual), _as_money(expected)
         if left is not None and right is not None:
             return abs(left - right) <= MONEY_TOLERANCE
-    if column in DATE_COLUMNS:
+    if column in date_columns:
         left, right = _as_date(actual), _as_date(expected)
         if left is not None and right is not None:
             return left == right
@@ -565,10 +616,11 @@ def _state_code(value: str) -> str:
     return _US_STATES.get(text, text.upper())
 
 
-def _match_key(row: dict[str, str]) -> str:
-    """Claim number alone: it is unique per document, and unlike the merge key
-    it does not depend on the claimant name the model may have got wrong."""
-    value = row.get(MATCH_COLUMN, "")
+def _match_key(row: dict[str, str], match_column: str) -> str:
+    """`match_column` alone: for the loss run, the claim number, which is unique
+    per document and unlike the merge key does not depend on the claimant name
+    the model may have got wrong."""
+    value = row.get(match_column, "")
     return "" if is_empty(value) else _WS_RE.sub("", str(value)).casefold()
 
 

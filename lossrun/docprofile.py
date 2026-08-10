@@ -104,7 +104,9 @@ def discover_layout(
     result = client.run(
         model=model,
         instructions=layout_instructions(schema),
-        prompt=layout_prompt(header_pages, profile.pages, context_text),
+        prompt=layout_prompt(
+            header_pages, profile.pages, context_text, document_label=schema.document_label
+        ),
         attachments=[Attachment(filename=f"{path.stem}-header.pdf", data=data)],
         stage="layout",
         label="layout discovery",

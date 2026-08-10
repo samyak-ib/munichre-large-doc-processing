@@ -138,7 +138,7 @@ def run_document(
                 log=log,
             )
 
-    golden = load_golden(golden_path or DEFAULT_GOLDEN_PATH, input_path.name)
+    golden = load_golden(golden_path or DEFAULT_GOLDEN_PATH, input_path.name, schema)
     accuracy_rows: list[dict[str, Any]] = []
     column_rows: list[dict[str, Any]] = []
     mismatch_rows: list[dict[str, Any]] = []
@@ -186,14 +186,14 @@ def run_document(
 
     unverified = 0
     if source.kind == "pdf":
-        key_issues, checked = verify_keys(run.rows, texts)
+        key_issues, checked = verify_keys(run.rows, texts, schema.identifier_columns)
         unverified = sum(1 for i in key_issues if i.verdict == NOT_FOUND)
         if checked:
             log(
                 f"  key check: {checked} key values checked against the text layer, "
                 f"{unverified} not found verbatim"
             )
-            _collect_key_issues(key_issues, run.rows, issues)
+            _collect_key_issues(key_issues, run.rows, issues, schema.key_columns)
         else:
             log("  key check: skipped, no text layer (scanned document)")
             issues.append(
@@ -298,7 +298,7 @@ def _run_qa(
     chunks = document_chunks(source.path, run.profile, config.chunking_for(run.model))
     result = qa_stage.review(
         run.rows,
-        qa_stage.row_chunk_pages(run.raw),
+        qa_stage.row_chunk_pages(run.raw, schema.key_columns),
         client=client,
         model=config.qa_model,
         schema=schema,
@@ -513,7 +513,9 @@ def _collect_qa_issues(result: QAResult, issues: list[dict[str, Any]]) -> None:
         )
 
 
-def _collect_key_issues(key_issues, rows, issues: list[dict[str, Any]]) -> None:
+def _collect_key_issues(
+    key_issues, rows, issues: list[dict[str, Any]], key_columns: tuple[str, ...]
+) -> None:
     from .merge import normalize_key
 
     for issue in key_issues:
@@ -528,7 +530,7 @@ def _collect_key_issues(key_issues, rows, issues: list[dict[str, Any]]) -> None:
                     if issue.verdict == NOT_FOUND
                     else "value matches the document only when case is ignored"
                 ),
-                "row_key": " | ".join(normalize_key(row)) if row else "",
+                "row_key": " | ".join(normalize_key(row, key_columns)) if row else "",
                 "column": issue.column,
                 "value": issue.value,
             }

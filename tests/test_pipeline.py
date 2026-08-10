@@ -583,3 +583,158 @@ def test_qa_makes_no_calls_when_it_is_off(tmp_path, stub_client):
     assert not [c for c in created[0].calls if c["stage"] == "qa"]
     assert outcome.qa_findings == 0
     assert outcome.rows == len(CLAIMS)
+
+
+# --- a custom, non-loss-run column list ---------------------------------------
+#
+# The pipeline is not loss-run-specific: the same extract -> merge -> qa ->
+# verify flow runs for any column list a schema file declares. This exercises
+# it against an invoice's line items instead of an insurance claim table.
+
+INVOICE_SCHEMA_YAML = """
+row_label: line item
+document_label: vendor invoice
+columns:
+  - name: Invoice Number
+    key: true
+    group: true
+  - name: Line Number
+    key: true
+    match: true
+  - name: Description
+  - name: Amount
+    type: money
+"""
+
+LINES = [
+    ("INV-1", "1", "Widgets"),
+    ("INV-1", "2", "Gadgets"),
+]
+
+
+class InvoiceFakeClient:
+    """A minimal stand-in for SuperAppClient over the invoice schema above."""
+
+    def __init__(self, *, config, telemetry, qa_payload=None):
+        self.config = config
+        self.telemetry = telemetry
+        self.qa_payload = qa_payload or {"findings": [], "missing_rows": []}
+        self.calls: list[dict] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return None
+
+    def close(self):
+        pass
+
+    def run(self, *, model, prompt, instructions="", attachments=None, stage="", label="",
+            pages="", effort=None):
+        self.calls.append({"stage": stage, "label": label, "prompt": prompt, "pages": pages})
+        if stage == "layout":
+            text = json.dumps({"present_columns": {}, "document_values": {}})
+        elif stage == "qa":
+            text = json.dumps(self.qa_payload)
+        else:
+            text = json.dumps(
+                {
+                    "columns": ["Invoice Number", "Line Number", "Description", "Amount"],
+                    "rows": [[inv, line, desc, "$10.00"] for inv, line, desc in LINES],
+                    "truncated": False,
+                    "last_row_key": list(LINES[-1][:2]),
+                }
+            )
+        result = RunResult(
+            response_id=f"resp_{len(self.calls)}",
+            status="completed",
+            output_text=text,
+            input_tokens=100,
+            output_tokens=20,
+        )
+        self.telemetry.record(
+            stage=stage, model=model, label=label, pages=pages, attempt=1, effort=effort or "",
+            response_id=result.response_id, status=result.status, latency_s=0.1, poll_count=1,
+            input_tokens=result.input_tokens, output_tokens=result.output_tokens,
+        )
+        return result
+
+
+def write_invoice(path) -> None:
+    doc = fitz.open()
+    page = doc.new_page()
+    lines = ["ACME SUPPLY CO - INVOICE", "Invoice INV-1"]
+    for inv, line, desc in LINES:
+        lines.append(f"{inv} | {line} | {desc} | $10.00")
+    page.insert_text((50, 60), "\n".join(lines), fontsize=9)
+    doc.save(path)
+    doc.close()
+
+
+def test_a_custom_column_list_runs_the_same_pipeline(tmp_path, monkeypatch):
+    schema_path = tmp_path / "columns.yaml"
+    schema_path.write_text(INVOICE_SCHEMA_YAML)
+    pdf = tmp_path / "invoice.pdf"
+    write_invoice(pdf)
+
+    def factory(*, config, telemetry):
+        return InvoiceFakeClient(config=config, telemetry=telemetry)
+
+    monkeypatch.setattr(pipeline, "ModelRouter", factory)
+
+    outcome = pipeline.run_document(
+        pdf,
+        config=make_config(tmp_path),
+        out_dir=tmp_path / "out",
+        schema_path=schema_path,
+        log=lambda *_: None,
+    )
+
+    assert outcome.rows == len(LINES)
+    assert outcome.unverified == 0
+
+    book = load_workbook(outcome.workbook)
+    header = [c.value for c in book["Final Table"][1]]
+    assert header == ["Invoice Number", "Line Number", "Description", "Amount"]
+    rows = {r[header.index("Line Number")] for r in book["Final Table"].iter_rows(min_row=2, values_only=True)}
+    assert rows == {"1", "2"}
+
+
+def test_a_custom_column_lists_qa_correction_is_verified_against_the_text(tmp_path, monkeypatch):
+    """The QA guard — a correction lands only when the text layer confirms it —
+    applies to a custom schema exactly as it does to the loss run's."""
+    schema_path = tmp_path / "columns.yaml"
+    schema_path.write_text(INVOICE_SCHEMA_YAML)
+    pdf = tmp_path / "invoice.pdf"
+    write_invoice(pdf)
+
+    def factory(*, config, telemetry):
+        return InvoiceFakeClient(
+            config=config,
+            telemetry=telemetry,
+            qa_payload={
+                "findings": [
+                    {
+                        "row": ["INV-1", "1"],
+                        "column": "Description",
+                        "correct_value": "Not On The Page",
+                        "reason": "looks wrong",
+                    }
+                ],
+                "missing_rows": [],
+            },
+        )
+
+    monkeypatch.setattr(pipeline, "ModelRouter", factory)
+
+    outcome = pipeline.run_document(
+        pdf,
+        config=make_config(tmp_path),
+        out_dir=tmp_path / "out",
+        schema_path=schema_path,
+        log=lambda *_: None,
+    )
+
+    assert outcome.qa_findings == 1
+    assert outcome.qa_applied == 0, "the proposed value does not appear on the page"
