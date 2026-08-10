@@ -85,3 +85,56 @@ def test_clean_table_maps_every_row():
     cleaned = clean_table(rows, SCHEMA)
     assert [r["Claim Number"] for r in cleaned] == ["C1", "C2"]
     assert cleaned[0]["Indemnity Paid"] == "5"
+
+
+# --- typographic dashes and the DD-Mon-YY family ------------------------------
+
+
+def test_a_typographic_hyphen_does_not_defeat_date_parsing():
+    """A real loss run printed every date as `13-Jul-17` using U+2010.
+
+    No format matches a Unicode hyphen, so the whole column passed through
+    unparsed and scored zero — 191 cells on one document, every one of them
+    read correctly by the model.
+    """
+    from lossrun.cleaning import clean_value
+
+    assert clean_value("Accident Date", "13‐Jul‐17") == "07/13/2017"
+    assert clean_value("Accident Date", "13-Jul-17") == "07/13/2017"
+    # en dash, em dash and minus sign reach us from PDFs too
+    assert clean_value("Accident Date", "13–Jul–17") == "07/13/2017"
+    assert clean_value("Accident Date", "13−Jul−17") == "07/13/2017"
+
+
+def test_the_day_month_year_family_is_understood():
+    from lossrun.cleaning import clean_value
+
+    assert clean_value("Closed Date", "31-Oct-19") == "10/31/2019"
+    assert clean_value("Closed Date", "07-Nov-2019") == "11/07/2019"
+    assert clean_value("Closed Date", "9-January-2020") == "01/09/2020"
+
+
+def test_hyphenated_two_digit_years_are_read_month_first():
+    """`07-06-21` reached us unparsed and could never match golden. Read
+    month-first, matching the slashed form this codebase already assumes."""
+    from lossrun.cleaning import clean_value
+
+    assert clean_value("Accident Date", "07-06-21") == "07/06/2021"
+    assert clean_value("Accident Date", "12-31-99") == "12/31/1999"
+
+
+def test_the_scorer_reads_the_same_forms_as_the_cleaner():
+    """The scorer parses the extracted value directly, so a shipped table that
+    already holds `13-Jul-17` still has to compare equal to golden."""
+    from lossrun.accuracy import values_match
+
+    assert values_match("Accident Date", "13‐Jul‐17", "07/13/2017")
+    assert values_match("Closed Date", "31-Oct-19", "10/31/2019")
+    assert not values_match("Accident Date", "14-Jul-17", "07/13/2017")
+
+
+def test_a_dash_in_an_identifier_is_left_alone():
+    """Only date parsing folds dashes; a claim number keeps what it was given."""
+    from lossrun.cleaning import clean_value
+
+    assert clean_value("Claim Number", "001‐WC19A") == "001‐WC19A"

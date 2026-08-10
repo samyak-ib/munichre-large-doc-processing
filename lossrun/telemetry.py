@@ -50,14 +50,20 @@ SUMMARY_COLUMNS = (
     "pages",
     "chunks",
     "rows",
-    "conflicts",
+    "qa_findings",
+    "qa_applied",
     "unverified_keys",
-    "agreement_pct",
     "calls",
     "input_tokens",
     "output_tokens",
     "total_tokens",
+    # Per page, so a 2-page and a 38-page document can be compared at all.
+    "input_tokens_per_page",
+    "output_tokens_per_page",
+    "cost_input_usd",
+    "cost_output_usd",
     "cost_total_usd",
+    "cost_per_page_usd",
     "calls_without_usage",
     "wall_clock_s",
     "status",
@@ -163,6 +169,14 @@ class Telemetry:
         return round(sum(c.cost_total_usd for c in self.calls), 6)
 
     @property
+    def input_cost_usd(self) -> float:
+        return round(sum(c.cost_input_usd for c in self.calls), 6)
+
+    @property
+    def output_cost_usd(self) -> float:
+        return round(sum(c.cost_output_usd for c in self.calls), 6)
+
+    @property
     def calls_without_usage(self) -> int:
         """Completed calls the API gave no token counts for.
 
@@ -184,17 +198,29 @@ class Telemetry:
             "pages": 0,
             "chunks": 0,
             "rows": 0,
-            "conflicts": 0,
+            "qa_findings": 0,
+            "qa_applied": 0,
             "unverified_keys": 0,
-            "agreement_pct": "",
             "calls": len(self.calls),
             "input_tokens": sum(c.input_tokens for c in self.calls),
             "output_tokens": sum(c.output_tokens for c in self.calls),
             "total_tokens": sum(c.total_tokens for c in self.calls),
+            "input_tokens_per_page": 0,
+            "output_tokens_per_page": 0,
+            "cost_input_usd": self.input_cost_usd,
+            "cost_output_usd": self.output_cost_usd,
             "cost_total_usd": self.total_cost_usd,
+            "cost_per_page_usd": 0,
             "calls_without_usage": self.calls_without_usage,
             "wall_clock_s": round(time.time() - self.started_at, 1),
             "status": "ok",
         }
         row.update(extra)
+        # Derived last, from whatever page count the caller supplied — a
+        # per-page figure computed against the default 0 would always be 0.
+        pages = int(row.get("pages") or 0)
+        if pages:
+            row["input_tokens_per_page"] = round(row["input_tokens"] / pages)
+            row["output_tokens_per_page"] = round(row["output_tokens"] / pages)
+            row["cost_per_page_usd"] = round(row["cost_total_usd"] / pages, 6)
         return row

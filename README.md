@@ -8,6 +8,7 @@ API, with no dependency on the monorepo.
 - [docs/APPROACH.md](docs/APPROACH.md) — the pipeline, chunking logic, column hints, and config contract
 - [docs/PIPELINE.md](docs/PIPELINE.md) — the flow end to end, and where each decision came from
 - [docs/CHALLENGES.md](docs/CHALLENGES.md) — known constraints and open questions
+- [docs/mistakes.md](docs/mistakes.md) — why accuracy is lower on some documents, with the numbers behind each cause
 
 ## Setup
 
@@ -48,7 +49,14 @@ uv run lossrun extract samples/loss_run.pdf   # extract one document
 uv run lossrun extract samples/a.pdf samples/b.pdf   # several — one batch, one report
 uv run lossrun score out/a_2026*  --influence  # re-score offline, no API calls
 uv run lossrun results out/a_2026* out/b_2026*  # write the shareable report
+uv run lossrun compare a=out/direct_calls b=out_qa/direct_calls   # cost + accuracy, side by side
 ```
+
+`compare` scores two or more labelled sets of finished runs against each other —
+what shipped, what it cost, and the per-document delta. It reads the workbooks
+the runs already wrote, so it costs no API calls and can be rebuilt whenever a
+scoring rule changes. `docs/mistakes.md` is the written-up version of one such
+comparison.
 
 | File | Contents |
 | --- | --- |
@@ -74,28 +82,28 @@ ledgers.
 
 | Flag | Effect |
 | --- | --- |
-| `--model MODEL` | Override the primary model |
-| `--consensus A B` | Override the consensus pair |
-| `--single-model` | Skip consensus; run the primary model only (roughly half the cost) |
+| `--model MODEL` | Override the extracting model |
+| `--qa-model MODEL` | Model that reviews the extracted table (default: the extracting model) |
 | `--config PATH` | Alternate `config.yaml` |
 | `--schema PATH` | Alternate `schema.json` |
 | `--out DIR` | Output root (default `out/`); runs land in `<out>/<route>_calls/` |
 | `--base-url URL` | Alternate API base |
 | `--effort LEVEL` | Force one reasoning effort across every model |
 | `--provider NAME` | Force one route — `auto`, `superapp`, `openai`, `gemini` — ignoring per-model overrides |
-| `--no-adjudicate` | Keep the primary model's value on every conflict instead of asking a third opinion |
+| `--no-qa` | Ship the extracted table unreviewed, skipping the QA pass |
 | `--results-out DIR` | Where the batch report goes (default `initial_results/`) |
 
 ## Models
 
-Configured in `config.yaml`, not in code. The default pair is
-`openai/gpt-5.6-luna` + `gemini/gemini-3.5-flash-lite`, one per vendor and each
-called directly — cross-provider so the two do not correlate their errors.
-Flash-Lite is reachable only on the direct route; SuperApp rejects it with
-`400 Unsupported model`. For a GPT-only endpoint:
+Configured in `config.yaml`, not in code. One model extracts and one reviews, and
+by default they are the same pin: `openai/gpt-5.6-luna` at `max` effort, called
+directly. There is no second extraction pass — see [QA](#qa) below.
+
+Point the review at a different pin when you want a second opinion on the reading
+rather than a second transcription of it:
 
 ```bash
-uv run lossrun extract doc.pdf --consensus openai/gpt-5.6-luna openai/gpt-5.6-terra
+uv run lossrun extract doc.pdf --qa-model gemini/gemini-3.5-flash-lite
 ```
 
 Adding a model means two config entries: a `models.overrides` page ceiling and a
@@ -133,6 +141,38 @@ timeout` far below the 25 MiB it advertises, so that route splits windows at
 1 MiB while a direct call uses the full 20 MiB inline ceiling. A model that falls
 back therefore still gets the tighter window.
 
+## QA
+
+The table is extracted once, then reviewed. The review gets one call per chunk
+carrying that chunk's pages again plus the rows read from them, and reports only
+the cells it believes are wrong along with what the document prints instead.
+
+A correction is written into the final table **only when the value it proposes
+occurs in the document's own text layer**. That guard is what keeps a reviewer
+that can invent a value from putting one in the deliverable — anything it cannot
+prove is logged as `qa_unverified` and the extracted value stands. Deleting a
+value is held to the same bar as replacing one: an early version exempted
+corrections to `N/A`, and measurement showed that was the only harm the stage
+did (CHALLENGES #22).
+
+The cost of the guard is a scanned document, which has no text layer for the
+check to consult — every finding is reported there and none applied (CHALLENGES
+#23; on `Loss Run_Report.pdf` that was 39 findings and 0 applicable).
+`qa_row_missing` lists claims the review found on the page but not in the table;
+they are reported, never added.
+
+Measured over the five golden documents: **+3 cells against the same extraction
+unreviewed**, and level with the consensus route it replaces at a fraction of the
+calls. See CHALLENGES #22 for the numbers and their error bars.
+
+```yaml
+qa:
+  enabled: true
+  model: ""        # empty means the extracting model
+```
+
+`--no-qa` skips the stage entirely.
+
 ## Reading a result
 
 Check these in order:
@@ -141,20 +181,33 @@ Check these in order:
    middle rows are the failure this pipeline exists to prevent.
 2. **Accuracy** — cell accuracy and row recall per model, with every disagreeing
    cell listed in `Accuracy Mismatches`. This is the number that matters.
-3. **Issues sheet** — `key_not_found` means a claim number or claimant name does
+3. **Accuracy metrics** — four numbers, and they answer different questions:
+   `rows_matched/rows_golden` is how much of the table came back;
+   `row_accuracy_matched_pct` is how correct a typical returned row is, each row
+   counting once; `cell_accuracy_pct` pools every cell, so it leans toward rows
+   carrying more scorable columns; `exact_row_pct` is the share of rows with
+   nothing wrong at all. Telemetry adds input/output cost and tokens per page.
+4. **Issues sheet** — `key_not_found` means a claim number or claimant name does
    not appear verbatim in the document text, which is the hallucination signature.
-   `model_disagreement` lists every cell the two models read differently, and
-   `adjudication_declined` marks the ones a third opinion would not settle —
-   those are the cells worth a human's time.
-4. **Telemetry** — cost and token counts for the run. A non-zero
-   `calls_without_usage` means the cost is a lower bound.
+   `qa_corrected` is the audit trail of what the review changed; `qa_unverified`
+   marks a cell the review wanted to change but could not prove, and
+   `qa_row_missing` a claim it found on the page but not in the table — those two
+   are the cells worth a human's time.
+5. **Telemetry** — cost and token counts for the run, split into input and
+   output and divided by page count. A non-zero `calls_without_usage` means the
+   cost is a lower bound.
 
 ## Tests
 
 ```bash
-uv run pytest
+uv run python -m pytest
 ```
 
 Covers page windowing, JSON repair on truncated output, row mapping, merge and
-conflict classification, cost arithmetic, and the full pipeline against a
-synthetic loss run with the API stubbed out.
+conflict classification, the QA guard, cost arithmetic, and the full pipeline
+against a synthetic loss run with the API stubbed out.
+
+> Use `python -m pytest`, not `uv run pytest`. The `.venv/bin/pytest` console
+> script in this checkout carries another project's interpreter path, so it runs
+> a different copy of `lossrun` entirely and reports passes that mean nothing
+> here. Recreating the venv (`rm -rf .venv && uv sync`) fixes it.

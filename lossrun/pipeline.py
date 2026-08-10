@@ -1,8 +1,7 @@
-"""Wires the stages together: ingest, profile, extract, merge, verify, compare."""
+"""Wires the stages together: ingest, profile, extract, merge, QA, verify, score."""
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
 import re
 import time
@@ -12,15 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from .accuracy import AccuracyResult, load_golden, score
-from .adjudicate import Adjudication, adjudicate
-from .adjudicate import apply as apply_adjudications
 from .cleaning import clean_table
 from .config import Config
-from .consensus import ConsensusResult, compare
 from .docprofile import DocProfile, Layout, discover_layout, page_texts, profile_pdf
-from .extract import ExtractResult, RawRow, extract_pdf, extract_text
+from .extract import ExtractResult, RawRow, document_chunks, extract_pdf, extract_text
 from .ingest import SourceDoc, ingest
 from .merge import finalize_rows
+from .qa import APPLIED, NO_CHANGE, UNMATCHED, UNVERIFIED, QAResult
+from . import qa as qa_stage
 from .report import append_ledger, write_workbook
 from .schema_loader import TableSchema, load_schema
 from .router import ModelRouter
@@ -29,7 +27,9 @@ from .verify import NOT_FOUND, verify_keys
 
 RAW_ROW_META = ("model", "chunk", "pages")
 
-DEFAULT_GOLDEN_PATH = Path("goldens/Loss Runs GTs.xlsx")
+# The extended golden set: sheet 1 is the original five documents, sheet 2 the
+# twenty-four added later. Both sheets are read — see `accuracy.load_golden`.
+DEFAULT_GOLDEN_PATH = Path("goldens/Loss Runs GTs (1).xlsx")
 
 # Loss-run filenames arrive with spaces, GUIDs and punctuation; keep them
 # recognisable but path-safe, and short enough to stay clickable.
@@ -39,7 +39,7 @@ MAX_RUN_DIR_STEM = 80
 
 @dataclass
 class ModelRun:
-    """One model's independent pass over the document."""
+    """The model's pass over the document."""
 
     model: str
     rows: list[dict[str, str]] = field(default_factory=list)
@@ -56,10 +56,10 @@ class RunOutcome:
     workbook: Path
     ledger: Path
     rows: int
-    conflicts: int
+    qa_findings: int
+    qa_applied: int
     unverified: int
     cost_usd: float
-    agreement: float | None
     route: str
     chunks: int
     accuracy: AccuracyResult | None = None
@@ -71,7 +71,6 @@ def run_document(
     config: Config,
     out_dir: Path,
     schema_path: Path | None = None,
-    single_model: bool = False,
     golden_path: Path | None = None,
     batch_id: str = "",
     log=print,
@@ -83,9 +82,7 @@ def run_document(
         run_id=run_id, document=input_path.name, pricing=config.pricing, batch_id=batch_id
     )
 
-    models = [config.primary_model] if single_model else list(config.consensus_models)
-    # De-duplicate while preserving order: a config may list the same model twice.
-    models = list(dict.fromkeys(models))
+    model = config.primary_model
 
     # Each run gets its own directory so re-running a document never overwrites
     # the previous result — comparing two model configurations is the point. Runs
@@ -94,7 +91,7 @@ def run_document(
     # mixing them in one folder invites a comparison that is not valid.
     run_dir = (
         out_dir
-        / f"{config.route_class(models)}_calls"
+        / f"{config.route_class([model])}_calls"
         / f"{_safe_stem(input_path)}_{time.strftime('%Y%m%d-%H%M%S')}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -109,10 +106,17 @@ def run_document(
     source = _primary_source(ingested.docs)
     log(f"  source: {source.name} ({source.kind}, {source.pages or '—'} pages)")
 
+    # Read once: the QA guard, the key check and the accuracy pass all want it,
+    # and pulling it out of the PDF three times is pure waste.
+    texts = page_texts(source.path) if source.kind == "pdf" else []
+
+    issues: list[dict[str, Any]] = []
+    qa_result: QAResult | None = None
+
     with ModelRouter(config=config, telemetry=telemetry) as client:
-        runs = _run_models(
+        run = _run_model(
             client,
-            models=models,
+            model=model,
             source=source,
             schema=schema,
             config=config,
@@ -120,85 +124,30 @@ def run_document(
             debug_dir=run_dir / "raw",
             log=log,
         )
+        _collect_extraction_issues(run, issues)
 
-    primary = runs[0]
-    if primary.error:
-        raise RuntimeError(f"primary model {primary.model} failed: {primary.error}")
-
-    issues: list[dict[str, Any]] = []
-
-    # The primary model can come back empty — a silent agent route, or a chunk
-    # that never parsed. Shipping an empty table while a second model holds a
-    # full one throws away work already paid for, so the table falls back.
-    if not primary.rows:
-        replacement = next((r for r in runs[1:] if not r.error and r.rows), None)
-        if replacement is not None:
-            log(
-                f"  primary {primary.model} returned no rows; "
-                f"falling back to {replacement.model} ({len(replacement.rows)} rows)"
+        if config.qa_enabled:
+            qa_result = _run_qa(
+                client,
+                run=run,
+                source=source,
+                schema=schema,
+                config=config,
+                texts=texts,
+                issues=issues,
+                log=log,
             )
-            issues.append(
-                {
-                    "severity": "warning",
-                    "category": "primary_model_empty",
-                    "detail": (
-                        f"{primary.model} produced no rows; the final table comes "
-                        f"from {replacement.model}"
-                    ),
-                    "source": primary.model,
-                }
-            )
-            runs = [replacement] + [r for r in runs if r is not replacement]
-            primary = replacement
-    _collect_extraction_issues(runs, issues)
-
-    consensus: ConsensusResult | None = None
-    others = [r for r in runs[1:] if not r.error and r.rows]
-    if others:
-        other = others[0]
-        consensus = compare(
-            primary.rows,
-            other.rows,
-            schema=schema,
-            primary_model=primary.model,
-            other_model=other.model,
-        )
-        _collect_consensus_issues(consensus, issues)
-        log(
-            f"  consensus: {consensus.compared_rows} shared rows, "
-            f"{len(consensus.conflicts)} cell conflicts, "
-            f"{consensus.overall_agreement:.1f}% agreement"
-        )
-        if config.adjudicate and consensus.conflicts:
-            with ModelRouter(config=config, telemetry=telemetry) as judge:
-                decisions = adjudicate(
-                    consensus.conflicts,
-                    client=judge,
-                    model=config.adjudicator_model,
-                    schema=schema,
-                    page_texts=page_texts(source.path) if source.kind == "pdf" else [],
-                    max_workers=config.api.max_concurrent_calls,
-                    log=log,
-                )
-            overturned = apply_adjudications(primary.rows, decisions)
-            # The adjudicated value comes from the other model's table, which was
-            # cleaned before the diff — re-clean so a replacement cannot slip a
-            # different date or money format into the final table.
-            primary.rows = clean_table(primary.rows, schema)
-            consensus.rows = primary.rows
-            _collect_adjudication_issues(decisions, issues)
-            log(f"  adjudication: {overturned} cells taken from {other.model}")
 
     golden = load_golden(golden_path or DEFAULT_GOLDEN_PATH, input_path.name)
     accuracy_rows: list[dict[str, Any]] = []
     column_rows: list[dict[str, Any]] = []
     mismatch_rows: list[dict[str, Any]] = []
     primary_accuracy: AccuracyResult | None = None
-    if golden:
+    if golden and run.rows:
         # Page count travels with every accuracy row so a score can be read
         # against document size — the scanned 38-page file and the 2-page one
         # are not comparable without it.
-        pages = primary.profile.pages if primary.profile else 0
+        pages = run.profile.pages if run.profile else 0
         context = {
             "batch_id": batch_id,
             "run_id": run_id,
@@ -206,49 +155,45 @@ def run_document(
             "document": input_path.name,
             "pages": pages,
         }
-        for run in runs:
-            if run.error or not run.rows:
-                continue
-            scored = score(run.rows, golden, schema, run.model)
-            if run.model == primary.model:
-                primary_accuracy = scored
-            accuracy_rows.append(
-                scored.summary_row(**context, effort=config.extract_effort_for(run.model) or "default")
-            )
-            column_rows.extend(
-                {
-                    "batch_id": batch_id,
-                    "run_id": run_id,
-                    "document": input_path.name,
-                    "pages": pages,
-                    "model": run.model,
-                    "column": name,
-                    "compared": c.compared,
-                    "correct": c.correct,
-                    "accuracy_pct": round(c.accuracy, 1),
-                }
-                for name, c in scored.columns.items()
-            )
-            mismatch_rows.extend(scored.mismatches)
-            log(
-                f"  [{run.model}] accuracy vs golden: "
-                f"{scored.rows_matched}/{scored.rows_golden} rows matched, "
-                f"{scored.cell_accuracy:.1f}% cells correct, "
-                f"{scored.exact_row_rate:.1f}% rows fully correct"
-            )
-    else:
+        scored = score(run.rows, golden, schema, run.model)
+        primary_accuracy = scored
+        accuracy_rows.append(
+            scored.summary_row(**context, effort=config.extract_effort_for(run.model) or "default")
+        )
+        column_rows.extend(
+            {
+                "batch_id": batch_id,
+                "run_id": run_id,
+                "document": input_path.name,
+                "pages": pages,
+                "model": run.model,
+                "column": name,
+                "compared": c.compared,
+                "correct": c.correct,
+                "accuracy_pct": round(c.accuracy, 1),
+            }
+            for name, c in scored.columns.items()
+        )
+        mismatch_rows.extend(scored.mismatches)
+        log(
+            f"  [{run.model}] accuracy vs golden: "
+            f"{scored.rows_matched}/{scored.rows_golden} rows matched, "
+            f"{scored.cell_accuracy:.1f}% cells correct, "
+            f"{scored.exact_row_rate:.1f}% rows fully correct"
+        )
+    elif not golden:
         log("  accuracy: no golden entry for this document")
 
     unverified = 0
     if source.kind == "pdf":
-        key_issues, checked = verify_keys(primary.rows, page_texts(source.path))
+        key_issues, checked = verify_keys(run.rows, texts)
         unverified = sum(1 for i in key_issues if i.verdict == NOT_FOUND)
         if checked:
             log(
                 f"  key check: {checked} key values checked against the text layer, "
                 f"{unverified} not found verbatim"
             )
-            _collect_key_issues(key_issues, primary.rows, issues)
+            _collect_key_issues(key_issues, run.rows, issues)
         else:
             log("  key check: skipped, no text layer (scanned document)")
             issues.append(
@@ -268,36 +213,34 @@ def run_document(
     # one population. Comparing the routes means comparing two ledgers.
     ledger_path = run_dir.parent / "telemetry.xlsx"
 
+    models = ", ".join(dict.fromkeys([model, config.qa_model] if config.qa_enabled else [model]))
     summary = telemetry.summary(
-        models=", ".join(models),
+        models=models,
         providers=", ".join(
-            f"{m.rsplit('/', 1)[-1]}->{config.provider_for(m)}" for m in models
+            f"{m.rsplit('/', 1)[-1]}->{config.provider_for(m)}" for m in config.routed_models
         ),
-        route=primary.profile.route if primary.profile else "text",
-        effort=", ".join(
-            f"{m.rsplit('/', 1)[-1]}={config.extract_effort_for(m) or 'default'}" for m in models
-        ),
-        pages=primary.profile.pages if primary.profile else 0,
-        chunks=primary.result.chunks if primary.result else 0,
-        rows=len(primary.rows),
-        conflicts=len(consensus.conflicts) if consensus else 0,
+        route=run.profile.route if run.profile else "text",
+        effort=f"{model.rsplit('/', 1)[-1]}={config.extract_effort_for(model) or 'default'}",
+        pages=run.profile.pages if run.profile else 0,
+        chunks=run.result.chunks if run.result else 0,
+        rows=len(run.rows),
+        qa_findings=len(qa_result.findings) if qa_result else 0,
+        qa_applied=qa_result.applied if qa_result else 0,
         unverified_keys=unverified,
-        agreement_pct=(round(consensus.overall_agreement, 1) if consensus else ""),
-        status="ok" if primary.rows else "no_rows",
+        status="ok" if run.rows else "no_rows",
     )
 
-    # Keep each model's discovered layout beside the workbook: when a column comes
-    # back wrong, the layout is usually where it went wrong.
-    for run in runs:
-        if run.layout and run.layout.data:
-            layout_file = run_dir / f"layout-{run.model.replace('/', '_')}.json"
-            layout_file.write_text(json.dumps(run.layout.data, indent=2))
+    # Keep the discovered layout beside the workbook: when a column comes back
+    # wrong, the layout is usually where it went wrong.
+    if run.layout and run.layout.data:
+        layout_file = run_dir / f"layout-{run.model.replace('/', '_')}.json"
+        layout_file.write_text(json.dumps(run.layout.data, indent=2))
 
     write_workbook(
         workbook_path,
-        final_rows=primary.rows,
+        final_rows=run.rows,
         final_columns=schema.names,
-        raw_rows=[{**r.values, **{k: getattr(r, k) for k in RAW_ROW_META}} for r in _all_raw(runs)],
+        raw_rows=[{**r.values, **{k: getattr(r, k) for k in RAW_ROW_META}} for r in run.raw],
         raw_columns=list(RAW_ROW_META) + list(schema.names),
         issues=issues,
         calls=telemetry.calls,
@@ -318,60 +261,73 @@ def run_document(
         run_dir=run_dir,
         workbook=workbook_path,
         ledger=ledger_path,
-        rows=len(primary.rows),
-        conflicts=len(consensus.conflicts) if consensus else 0,
+        rows=len(run.rows),
+        qa_findings=len(qa_result.findings) if qa_result else 0,
+        qa_applied=qa_result.applied if qa_result else 0,
         unverified=unverified,
         cost_usd=telemetry.total_cost_usd,
-        agreement=consensus.overall_agreement if consensus else None,
-        route=primary.profile.route if primary.profile else "text",
-        chunks=primary.result.chunks if primary.result else 0,
+        route=run.profile.route if run.profile else "text",
+        chunks=run.result.chunks if run.result else 0,
         accuracy=primary_accuracy,
     )
 
 
-def _run_models(
-    client: SuperAppClient,
+def _run_qa(
+    client: ModelRouter,
     *,
-    models: list[str],
+    run: ModelRun,
     source: SourceDoc,
     schema: TableSchema,
     config: Config,
-    context_text: str,
-    debug_dir: Path,
+    texts: list[str],
+    issues: list[dict[str, Any]],
     log,
-) -> list[ModelRun]:
-    """Run each model's full pass. Chunks within a model always run in order.
+) -> QAResult | None:
+    """Review the extracted table against the pages it was read from.
 
-    Models run concurrently only up to `api.max_concurrent_calls`. Two models
-    uploading the same PDF at the same moment is enough to make the endpoint
-    time out reading one of the bodies, so setting that to 1 serializes them and
-    trades wall clock for a run that finishes.
+    Skipped for a source with no PDF to re-attach: the review's whole value is
+    that it looks at the page again, and a text source has already been sent to
+    the model in full.
     """
-    if len(models) == 1:
-        return [
-            _run_model(client, models[0], source, schema, config, context_text, debug_dir, log)
-        ]
+    if not run.rows:
+        return None
+    if source.kind != "pdf" or run.profile is None:
+        log("  qa: skipped, no PDF pages to review against")
+        return None
 
-    workers = max(1, min(len(models), config.api.max_concurrent_calls))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
-            pool.submit(
-                _run_model, client, model, source, schema, config, context_text, debug_dir, log
-            ): model
-            for model in models
-        }
-        by_model = {}
-        for future in concurrent.futures.as_completed(futures):
-            model = futures[future]
-            try:
-                by_model[model] = future.result()
-            except Exception as exc:  # surfaced per model, never fatal for the run
-                by_model[model] = ModelRun(model=model, error=str(exc))
-    return [by_model[m] for m in models]
+    chunks = document_chunks(source.path, run.profile, config.chunking_for(run.model))
+    result = qa_stage.review(
+        run.rows,
+        qa_stage.row_chunk_pages(run.raw),
+        client=client,
+        model=config.qa_model,
+        schema=schema,
+        chunks=chunks,
+        effort=config.extract_effort_for(config.qa_model),
+        max_workers=config.api.max_concurrent_calls,
+        log=log,
+    )
+    result.verifiable = any(t.strip() for t in texts)
+    applied = qa_stage.apply(run.rows, result.findings, texts, schema)
+
+    log(
+        f"  qa: {result.calls} review call(s), {len(result.findings)} corrections "
+        f"proposed, {applied} applied, "
+        f"{sum(1 for f in result.findings if f.verdict == UNVERIFIED)} unverified, "
+        f"{len(result.missing)} row(s) reported missing"
+    )
+    if result.findings and not result.verifiable:
+        log(
+            "  qa: no text layer, so no correction could be confirmed against the "
+            "document — every one is reported rather than applied"
+        )
+    _collect_qa_issues(result, issues)
+    return result
 
 
 def _run_model(
-    client: SuperAppClient,
+    client: ModelRouter,
+    *,
     model: str,
     source: SourceDoc,
     schema: TableSchema,
@@ -432,7 +388,7 @@ def _run_model(
         ),
         log=lambda message: log(f"  [{model}]{message}"),
     )
-    # Render into golden's representation before scoring or writing the sheet.
+    # Render into golden's representation before reviewing, scoring or writing.
     run.rows = clean_table(rows, schema)
     log(f"  [{model}] {len(run.raw)} raw rows -> {len(rows)} merged rows")
     return run
@@ -452,98 +408,107 @@ def _primary_source(docs: list[SourceDoc]) -> SourceDoc:
     return docs[0]
 
 
-def _all_raw(runs: list[ModelRun]) -> list[RawRow]:
-    rows: list[RawRow] = []
-    for run in runs:
-        rows.extend(run.raw)
-    return rows
-
-
-def _collect_extraction_issues(runs: list[ModelRun], issues: list[dict[str, Any]]) -> None:
-    for run in runs:
-        if run.error:
-            issues.append(
-                {
-                    "severity": "error",
-                    "category": "model_run",
-                    "detail": run.error,
-                    "source": run.model,
-                }
-            )
-        for event in run.result.events if run.result else []:
-            issues.append(
-                {
-                    "severity": event.level,
-                    "category": event.stage,
-                    "detail": event.detail,
-                    "source": f"{run.model} {event.chunk}".strip(),
-                    "value": event.pages,
-                }
-            )
-
-
-def _collect_consensus_issues(
-    consensus: ConsensusResult, issues: list[dict[str, Any]]
-) -> None:
-    for conflict in consensus.conflicts:
+def _collect_extraction_issues(run: ModelRun, issues: list[dict[str, Any]]) -> None:
+    if run.error:
         issues.append(
             {
-                "severity": "warning",
-                "category": "model_disagreement",
-                "detail": (
-                    f"{conflict.primary_model}={conflict.primary_value!r} vs "
-                    f"{conflict.other_model}={conflict.other_value!r}"
-                ),
-                "row_key": " | ".join(conflict.key),
-                "column": conflict.column,
-                "value": conflict.primary_value,
-                "source": conflict.primary_model,
+                "severity": "error",
+                "category": "model_run",
+                "detail": run.error,
+                "source": run.model,
             }
         )
-    for key in consensus.only_primary:
+    for event in run.result.events if run.result else []:
         issues.append(
             {
-                "severity": "warning",
-                "category": "row_only_in_primary",
-                "detail": "the second model did not return this row",
-                "row_key": " | ".join(key),
-            }
-        )
-    for key in consensus.only_other:
-        issues.append(
-            {
-                "severity": "warning",
-                "category": "row_only_in_secondary",
-                "detail": "the primary model did not return this row; it is NOT in the final table",
-                "row_key": " | ".join(key),
+                "severity": event.level,
+                "category": event.stage,
+                "detail": event.detail,
+                "source": f"{run.model} {event.chunk}".strip(),
+                "value": event.pages,
             }
         )
 
 
-def _collect_adjudication_issues(
-    decisions: list[Adjudication], issues: list[dict[str, Any]]
-) -> None:
-    """Record every tie-break, including the ones that declined to break a tie.
+def _collect_qa_issues(result: QAResult, issues: list[dict[str, Any]]) -> None:
+    """Record every proposed correction and what became of it.
 
-    A conflict the adjudicator would not settle is the one a human should read,
-    so it stays a warning; a settled one drops to info as an audit trail.
+    A correction the document confirmed drops to info as an audit trail. One it
+    would not confirm stays a warning: that is a cell where the reviewer and the
+    extractor disagree and neither can be checked, which is exactly the cell a
+    human should read.
     """
-    for decision in decisions:
-        settled = decision.resolved
-        winner = decision.candidate_b if decision.choice == "B" else decision.candidate_a
+    for finding in result.findings:
+        if finding.verdict == NO_CHANGE:
+            continue
+        if finding.verdict == APPLIED:
+            severity, category, detail = (
+                "info",
+                "qa_corrected",
+                f"replaced {finding.current_value!r} with {finding.proposed_value!r}: "
+                f"{finding.reason}",
+            )
+        elif finding.verdict == UNMATCHED:
+            severity, category, detail = (
+                "warning",
+                "qa_unmatched_row",
+                f"correction names a row the table does not hold: {finding.reason}",
+            )
+        else:
+            severity, category, detail = (
+                "warning",
+                "qa_unverified",
+                f"proposed {finding.proposed_value!r} in place of "
+                f"{finding.current_value!r}, but that value does not appear in the "
+                f"document text — kept the extracted value: {finding.reason}",
+            )
         issues.append(
             {
-                "severity": "info" if settled else "warning",
-                "category": "adjudicated" if settled else "adjudication_declined",
+                "severity": severity,
+                "category": category,
+                "detail": detail,
+                "row_key": " | ".join(finding.key),
+                "column": finding.column,
+                "value": finding.proposed_value,
+                "source": f"qa {finding.pages}".strip(),
+            }
+        )
+
+    for row in result.missing:
+        issues.append(
+            {
+                "severity": "warning",
+                "category": "qa_row_missing",
                 "detail": (
-                    f"chose {decision.choice}: {decision.reason}"
-                    if settled
-                    else f"unresolved, kept the primary value: {decision.reason}"
+                    "the review found this claim on the page but not in the table; "
+                    f"it is NOT in the final table: {row.reason}"
                 ),
-                "row_key": " | ".join(decision.key),
-                "column": decision.column,
-                "value": winner,
-                "source": "adjudicator",
+                "row_key": " | ".join(row.key),
+                "source": f"qa {row.pages}".strip(),
+            }
+        )
+
+    for error in result.errors:
+        issues.append(
+            {
+                "severity": "warning",
+                "category": "qa_call_failed",
+                "detail": f"a review call did not return a usable answer: {error}",
+                "source": "qa",
+            }
+        )
+
+    if result.findings and not result.verifiable:
+        issues.append(
+            {
+                "severity": "warning",
+                "category": "qa_unverifiable",
+                "detail": (
+                    "this document has no text layer, so no proposed correction "
+                    "could be confirmed against it; every one is reported rather "
+                    "than applied"
+                ),
+                "source": "qa",
             }
         )
 

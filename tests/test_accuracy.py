@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from lossrun.accuracy import _as_date, _as_money, load_golden, score, values_match
 from lossrun.schema_loader import load_schema
 
@@ -234,3 +236,130 @@ def test_a_wrapped_identifier_scores_as_the_identifier_it_is():
     assert values_match("Policy Number", "001- WC19A-78355", "001-WC19A-78355")
     assert values_match("Claim Number", "C00320453 -02", "C00320453-02")
     assert not values_match("Policy Number", "001-WC19A-78355", "001-WC20A-78355")
+
+
+# --- matching a document to its golden entry ---------------------------------
+
+
+def _resolve(candidates, document):
+    from lossrun.accuracy import _resolve_golden_filename
+
+    return _resolve_golden_filename(candidates, document)
+
+
+def test_an_exact_filename_always_wins_over_a_containment_match():
+    """The failure this prevents is quiet and total.
+
+    With 29 documents, names nest: `Loss Runs.pdf` is a substring of `WC Loss
+    Runs.pdf`, `GLI Loss Runs.PDF` and six more. A containment-first rule scored
+    it against 155 golden rows drawn from eight different documents.
+    """
+    candidates = [
+        "Loss Runs.pdf",
+        "WC Loss Runs.pdf",
+        "GLI Loss Runs.PDF",
+        "Auto Loss Runs.pdf",
+        "2017-22 CIC Pkg Loss Runs.PDF",
+    ]
+    assert _resolve(candidates, "Loss Runs.pdf") == "Loss Runs.pdf"
+    assert _resolve(candidates, "WC Loss Runs.pdf") == "WC Loss Runs.pdf"
+    assert _resolve(candidates, "GLI Loss Runs.PDF") == "GLI Loss Runs.PDF"
+
+
+def test_a_renamed_document_still_finds_its_golden_entry():
+    """The case the loose match exists for: golden keeps the original name."""
+    candidates = ["093fca2c-8c12__Updated Acords LRs_Application_CAU CPP.PDF", "Loss Runs.pdf"]
+    assert _resolve(candidates, "LRs_Application_CAU CPP.PDF") == candidates[0]
+
+
+def test_the_entry_carrying_the_whole_document_name_wins():
+    """Two golden entries transcribe the same PDF and they disagree.
+
+    One is the GUID-prefixed original containing the document name in full; the
+    other is a shorter name merely contained in it. The first is the specific
+    match, and picking between them cannot be left to sheet order.
+    """
+    guid = "093fca2c__Updated Acords LRs_Application_CAU CPP MAR PKG WCO Loss Runs.PDF"
+    candidates = [guid, "CAU CPP MAR PKG WCO Loss Runs.PDF", "Loss Runs.pdf"]
+    assert _resolve(candidates, "LRs_Application_CAU CPP MAR PKG WCO Loss Runs.PDF") == guid
+    # …and that shorter entry is still reachable by its own exact name.
+    assert _resolve(candidates, "CAU CPP MAR PKG WCO Loss Runs.PDF") == candidates[1]
+
+
+def test_a_document_with_no_golden_entry_resolves_to_nothing():
+    assert _resolve(["Loss Runs.pdf"], "Loss-3.pdf") is None
+    assert _resolve([], "anything.pdf") is None
+
+
+def test_every_sheet_of_the_golden_workbook_is_read(tmp_path):
+    """The set grew a second sheet; reading only the first scores the new
+    documents as having no golden at all rather than failing loudly."""
+    from openpyxl import Workbook
+
+    from lossrun.accuracy import load_golden
+
+    path = tmp_path / "golden.xlsx"
+    book = Workbook()
+    book.remove(book.active)
+    header = ["Filename", "Claim ID", "Claimant Name", "Loss State"]
+    first = book.create_sheet("Sheet1")
+    first.append(header)
+    first.append(["old.pdf", "C1", "A", "TX"])
+    second = book.create_sheet("Sheet2")
+    second.append(header)
+    second.append(["new.pdf", "C2", "B", "CA"])
+    book.save(path)
+
+    assert len(load_golden(path, "old.pdf")) == 1
+    assert len(load_golden(path, "new.pdf")) == 1, "the second sheet must be read"
+    assert load_golden(path, "absent.pdf") is None
+
+
+# --- row-level accuracy -------------------------------------------------------
+
+
+def test_row_accuracy_weights_every_row_equally():
+    """A row with 20 scorable cells and one with 2 count the same.
+
+    Pooled cell accuracy answers "how many cells are right"; this answers "how
+    correct is a typical row", which is the number a reviewer feels.
+    """
+    from lossrun.accuracy import score
+    from lossrun.schema_loader import load_schema
+
+    schema = load_schema()
+    golden = [
+        # Four scorable cells, all of them right.
+        {"Claim Number": "C1", "Claimant Name": "A", "Loss State": "TX", "Policy Number": "P"},
+        # Three scorable cells — golden is blank for Policy Number, so it is not
+        # scored — and only the claim number is right.
+        {"Claim Number": "C2", "Claimant Name": "B", "Loss State": "CA", "Policy Number": "N/A"},
+    ]
+    extracted = [
+        dict(golden[0]),
+        {**golden[1], "Claimant Name": "WRONG", "Loss State": "NY"},
+    ]
+    result = score(extracted, golden, schema, "m")
+
+    assert result.rows_matched == 2
+    assert result.row_accuracies == pytest.approx([100.0, 33.3], abs=0.1)
+    # Pooled cells lean toward the row carrying more of them...
+    assert result.cell_accuracy == pytest.approx(71.4, abs=0.1)  # 5 of 7
+    # ...while the row-level figure gives each row one vote.
+    assert result.row_accuracy == pytest.approx(66.7, abs=0.1)
+    assert result.row_accuracy_overall == pytest.approx(66.7, abs=0.1)
+
+
+def test_a_row_we_never_found_scores_zero_in_the_overall_figure_only():
+    from lossrun.accuracy import score
+    from lossrun.schema_loader import load_schema
+
+    schema = load_schema()
+    golden = [
+        {"Claim Number": "C1", "Claimant Name": "A", "Loss State": "TX"},
+        {"Claim Number": "C2", "Claimant Name": "B", "Loss State": "CA"},
+    ]
+    result = score([dict(golden[0])], golden, schema, "m")
+    assert result.rows_matched == 1
+    assert result.row_accuracy == 100.0, "of what we returned, all of it is right"
+    assert result.row_accuracy_overall == 50.0, "half the document never came back"

@@ -25,6 +25,10 @@ _EMPTY = {"", "n/a", "na", "none", "null", "-", "--", "nan"}
 
 # Formats seen from the models, most specific first. Two-digit years are
 # ambiguous and handled last so `01/02/2023` never parses as day-first.
+#
+# The `%d-%b-%y` family is here because a real loss run printed `13-Jul-17` for
+# every date, and without it the whole column passes through unparsed and scores
+# zero — 191 cells on one document, all of them read correctly by the model.
 _DATE_FORMATS = (
     "%m/%d/%Y",
     "%Y-%m-%d",
@@ -33,9 +37,26 @@ _DATE_FORMATS = (
     "%B %d, %Y",
     "%d %b %Y",
     "%d %B %Y",
+    "%d-%b-%Y",
+    "%d-%B-%Y",
     "%Y/%m/%d",
     "%m/%d/%y",
+    # Hyphenated two-digit years, read month-first for the same reason the
+    # slashed form is: `07-06-21` is ambiguous, and this codebase is US-first.
+    "%m-%d-%y",
+    "%d-%b-%y",
+    "%d-%B-%y",
 )
+
+# A PDF prints a typographic hyphen, en dash or minus sign where a date format
+# expects an ASCII hyphen. `13‐Jul‐17` with U+2010 parses under no format at all,
+# so the separator is folded before any of them is tried.
+_DASH_RE = re.compile("[‐-―−－]")
+
+
+def normalize_dashes(text: str) -> str:
+    """Fold typographic dashes onto ASCII `-`, so date formats can match."""
+    return _DASH_RE.sub("-", text)
 
 _MONEY_STRIP_RE = re.compile(r"[^0-9.\-]")
 
@@ -81,6 +102,7 @@ def _format_date(text: str) -> str:
     hide a real extraction from the score.
     """
     stripped = text.split(" ")[0] if _looks_like_timestamp(text) else text
+    stripped = normalize_dashes(stripped)
     for fmt in _DATE_FORMATS:
         try:
             return datetime.strptime(stripped, fmt).strftime(GOLDEN_DATE_FORMAT)

@@ -115,13 +115,16 @@ STANDING_CAVEATS = (
         "entity. Neither is a transcription failure.",
     ),
     (
-        "Adjudication favours the model that is judging",
-        "With `consensus.adjudicator` empty the primary model settles conflicts "
-        "between itself and the second model. Across five documents it settled "
-        "119 conflicts and conceded 14 — but 0 of 91 on the one document where "
-        "the second model scored higher, which is also the document that carried "
-        "the stage's cost. Its value is unproven until it points at a neutral "
-        "third pin.",
+        "QA can only fix what the text layer can confirm",
+        "The review proposes corrections; one is written into the table only when "
+        "the value it proposes occurs in the document's own text layer. That is "
+        "what stops a confident-sounding invention from reaching the deliverable, "
+        "and it has a cost: on a scanned document there is no text layer, so every "
+        "finding is reported and none is applied — 39 findings and 0 applicable on "
+        "Loss Run_Report.pdf. The Issues sheet's `qa_unverified` rows are where "
+        "that shows up. Measured over these five documents the stage is worth "
+        "+3 cells against the same extraction unreviewed, which is inside the "
+        "run-to-run noise of the extraction itself.",
     ),
     (
         "Golden is the arbiter, and it is a small sample",

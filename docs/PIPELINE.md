@@ -52,24 +52,26 @@ chunk's trailing row keys as seam anchors.
                             [Post-process]  cleaning.py
                                       |
                                       v
+                                [4 QA]  qa.py
+                            one call per chunk: that chunk's
+                            pages re-attached + the rows read
+                            from them -> wrong cells, and the
+                            value the document prints
+                                      |
+                                      v
+                            Proposed value found in the
+                            PDF text layer?
+                               /            \
+                             yes             no
+                             /                \
+                     applied to the        reported as
+                     final table           qa_unverified;
+                     (cleaned first)       extracted value stands
+                             \                /
+                              v              v
                                [Verify]  verify.py
                                       |
                                       v
-                              Second model configured?
-                                 /            \
-                               yes             no
-                               /                \
-                    [4 Consensus]                |
-                     consensus.py                |
-                          |                      |
-                          v                      |
-                 [4b Adjudicate]  adjudicate.py  |
-                  one text-only call per         |
-                  conflicting cell; answer       |
-                  is A / B / neither, never      |
-                  a new value                    |
-                               \                /
-                                v              v
                          [5 Score]  accuracy.py vs golden
                                       |
                 +---------------------+---------------------+
@@ -94,9 +96,10 @@ carries agent-loop tokens a direct call never pays for.
 | **2 Extract** | All 24 row columns in one call per chunk; verbatim clause; previous chunk's row keys as seam anchors; `COLUMN_HINTS` on top of the schema's own column specs |
 | **Retry / resume** | Empty → retry; truncated → fresh call continuing after `last_row_key`; unparseable → `raw/` |
 | **3 Merge** | Dedupe seams, fill gaps, record conflicts |
-| **Post / verify** | Dates → `MM/DD/YYYY`, money → decimal; every key must appear verbatim in the PDF text layer |
-| **4 Consensus** | If a second model is configured: diff on row key, flag every disagreement |
-| **4b Adjudicate** | One text-only call per conflicting cell carrying both candidates and the surrounding source text. The answer is a choice, so a tie-break can never invent a value. On by default |
+| **Post-process** | Dates → `MM/DD/YYYY`, money → decimal |
+| **4 QA** | One call per chunk carrying that chunk's pages again plus the rows read from them. Reports wrong cells and what the document prints instead, and claims it found on the page but not in the table. On by default |
+| **4b Apply** | A correction lands only if its value occurs in the PDF text layer; otherwise it is reported and the extracted value stands. Deleting a value is held to the same proof as replacing one. Missing rows are flagged, never added |
+| **Verify** | Every key must appear verbatim in the PDF text layer |
 | **5 Score** | Match to golden on claim number — per column and per model, under a `ScoringPolicy` whose every assumption can be switched off and measured |
 | **Outputs** | `out/<route>_calls/<doc>_<timestamp>/`, that route's `telemetry.xlsx`, and a per-batch `initial_results/v<n>_<date>_<time>.xlsx` |
 
@@ -108,7 +111,7 @@ carries agent-loop tokens a direct call never pays for.
 | **00:24:40** | Diagnosis: *"we are chunking the tables… every table field is a separate API call… we are getting different numbers of rows in every place"* (Samyak) | **Every column in one call per chunk** — the divergence is removed at its source |
 | **00:36:40** | *"can we chunk the document and provide some type of layout to each of the chunks"* (Ashish) | `layout.json` from Stage 1b travels with every chunk |
 | **00:44:37** | *"literally required divide and conquer"* | The `single_shot` / `chunked` split |
-| **00:58:03** | *"Use two models… compare if both match. One is the Luna Max… and use the Gemini 3.5 flash light"* | Stage 4 consensus, with both named models. Flash-Lite is not a selectable SuperApp pin (`400`), so it is reached by calling Google directly — [CHALLENGES.md #2](CHALLENGES.md) |
+| **00:58:03** | *"Use two models… compare if both match. One is the Luna Max… and use the Gemini 3.5 flash light"* | Originally Stage 4 consensus. **Superseded:** the second extraction pass was dropped in favour of a QA review by Luna over the table the first pass produced — one call per chunk instead of a second full extraction, and every cell audited rather than only the contested ones. The consensus implementation is preserved on the `consensus-route` branch |
 | **00:58:03** | *"you take a PDF metadata, you figure out what is the number of pages"* | Stage 1a local profile |
 | **00:59:00** | *"I'm going to give you PDF in chunks… figure out some overlapping part to do the join"* | 50-page windows with 2-page overlap |
 | **00:59:00** | *"the first run should figure out the metadata, what is the column — because when you go to next pages they will not have the metadata"* | Layout discovery over the first 5 pages |

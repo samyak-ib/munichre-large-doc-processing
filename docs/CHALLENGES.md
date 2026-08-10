@@ -9,11 +9,12 @@ Companion to [APPROACH.md](APPROACH.md).
 - **Reasoning effort is now settable, but it is not the variable that matters** — the same settings produced both the best and worst measured runs.
 - **The pair recommended on the call now runs**, because calling Google directly bypasses the SuperApp catalog that rejects Flash-Lite. Measured, it trails Luna on row recall (84.8% against 96.7%) and costs more per token, so the cost argument behind it does not hold.
 - **Luna is unstable on stacked two-line headers**, intermittently returning the claim adjuster as the claimant. Gemini is not.
-- **The verbatim key check proves a value was copied from the document, not that it came from the right column.** Cross-model disagreement is what catches a misassigned value.
-- **Consensus measures agreement, not accuracy.** Golden data now answers the accuracy question directly, and adjudication turns each disagreement into a decision rather than a flag.
+- **The verbatim key check proves a value was copied from the document, not that it came from the right column.** The QA review is what is now asked to catch a misassigned value, because it is given the column definitions alongside the page.
+- **The second extraction pass is gone.** Consensus measured agreement, not accuracy, and cost a full second read to produce it. A QA review of the single extraction audits every cell rather than only the contested ones, for one call per chunk. The consensus implementation is preserved on the `consensus-route` branch.
 - **The largest remaining errors were structural, not transcription.** Three columns returned `N/A` because the value was somewhere the extraction pass never looked, and one read the wrong column entirely. Prompt guidance addresses all four — and that guidance was written from five documents, which bounds how far it generalises.
 - **The scoring rules are themselves assumptions**, each measurable and each reported with what it is worth.
-- **Adjudication as configured is a rubber stamp.** The primary model settled 93 conflicts against the second model and chose itself in every one — on a document where the second model scored higher. A neutral third pin is needed before the stage earns its cost.
+- **The QA review is accuracy-neutral and operationally much cheaper**: level with the consensus route on the five golden documents, at 15 API calls against 421 and a third of the wall clock. The accuracy difference is smaller than the run-to-run noise, so "level" is the claim, not "better".
+- **The QA guard can only fix what the text layer confirms**, which stops it inventing a value and goes silent on exactly the scanned documents where a second look at the page is worth most.
 - **The SuperApp endpoint times out on concurrent uploads**, well below its documented body cap. Working around it costs wall clock, and it is the reason request-size ceilings are set per provider rather than per model.
 - **Cost figures carry two known error sources**: operator-maintained prices, and one price per pin serving two routes that do not charge the same.
 - **The measurement route matters.** Reaching a model through SuperApp adds agent-loop tokens, reports no usage at all for Gemini, and can silently substitute a different model. Calling the vendor directly avoids all three, which is why it is the default and SuperApp is the fallback.
@@ -39,13 +40,17 @@ The instability is specific and reproducible in kind: the document stacks two la
 
 Layout discovery is not the culprit: it correctly reported `Claimant Name -> "Claimant Name / Claim Description"` in every run, including the failing ones. The layout is right and extraction ignores it.
 
-**Ponder:** the fix belongs in the extraction prompt, not in the effort setting — an explicit "do not confuse the claimant with the adjuster" clause derived from the stacked headers that layout discovery already detects. Until then, Luna cannot be trusted as the primary model on stacked-header layouts, which is a strong argument for keeping the cross-provider pair.
+**Ponder:** the fix belongs in the extraction prompt, not in the effort setting — an explicit "do not confuse the claimant with the adjuster" clause derived from the stacked headers that layout discovery already detects. Until then, Luna is a shaky first reader on stacked-header layouts, which is most of why the QA stage exists.
 
 ### 1a. The verbatim key check cannot catch a misassigned value
 
 Every one of those runs scored **0 keys failing the verbatim check**, including the ones where most claimant names were wrong. The adjuster's name is genuinely present in the document, one column over. The check proves a value was *copied* from the document, never that it came from the *right place*.
 
-Cross-model disagreement is the only thing that caught this. A single-model run would have reported clean, with a plausible-looking table.
+Cross-model disagreement is what caught it, and this is the case the QA route has to answer for now that the second extraction is gone.
+
+The review is a better instrument for it than consensus was, in principle: it is handed the column's definition alongside the page, so "this cell holds the adjuster, not the claimant" is a finding it is explicitly asked for — where consensus could only report that two models differed and leave a biased judge to pick. The correction is also exactly the kind the guard admits, because the real claimant name is printed on the page and therefore in the text layer.
+
+**It is unmeasured.** The claim above is an argument from design, not a number. Re-running the three `LRs_Application` runs with QA on and counting how many misassigned claimants come back as `qa_corrected` is the experiment that settles it, and it has not been run.
 
 ### 2. The exact model pair recommended on the call is now reachable, by going around SuperApp
 
@@ -58,13 +63,15 @@ Both gaps closed, for different reasons:
 
 **Consequence:** the recommended pair is no longer a stand-in, but its accuracy is now measured. Across the five golden documents Flash-Lite scored 81.8% of cells and 84.8% row recall, against Luna's 83.6% and 96.7% — competitive on cells, materially worse at finding rows. At $0.30/$2.50 per 1M tokens against Luna's $0.20/$0.80 it is also not the cheaper pin, so the cost argument that motivated it does not survive contact with the published prices.
 
-### 3. Same-family models make weak consensus partners
+### 3. Same-family models make weak second readers
 
-The routing registry groups `gpt-5.6-sol`, `-terra` and `-luna` under a single `gpt-5.6` family because they share base weights, and uses that grouping to reason about diversity. A GPT-only consensus pair therefore correlates its errors: when two models share weights, agreement is weaker evidence of correctness.
+The routing registry groups `gpt-5.6-sol`, `-terra` and `-luna` under a single `gpt-5.6` family because they share base weights, and uses that grouping to reason about diversity. Two pins from one family correlate their errors, so a second reading by one of them is weaker evidence than its independence suggests.
 
-**What the script does:** defaults to a cross-provider pair. A GPT-only pair stays available in config for endpoints that permit only OpenAI models, documented as the weaker configuration.
+This used to be an argument about which pair to extract with. It is now an argument about `qa.model` — see #8, which is the same constraint in its sharper form, since the default reviewer is not merely same-family but the same pin.
 
-**Ponder:** the GPT-only constraint and the consensus-quality argument point in opposite directions. If Munich's endpoint is the deployment target, the weaker pairing may be the only option — in which case the verbatim text-layer check carries proportionally more weight.
+**What the script does:** leaves the choice in config. `qa.model` accepts any pin, and the routing already handles the mixed run a cross-vendor reviewer produces.
+
+**Ponder:** if Munich's endpoint permits only OpenAI models, a same-family reviewer may be the only option — in which case the verbatim text-layer check carries proportionally more weight.
 
 ### 4. No structured output
 
@@ -84,15 +91,17 @@ The routing registry groups `gpt-5.6-sol`, `-terra` and `-luna` under a single `
 
 ### 7. Create is rate-limited to 60 per minute per principal
 
-Shared across both consensus models, so effective throughput is roughly one 50-page chunk per second for both models combined. Batch runs across many documents need pacing; the telemetry ledger shows when the limit binds.
+Shared across the extraction and QA stages, which now issue roughly two calls per chunk between them. Batch runs across many documents need pacing; the telemetry ledger shows when the limit binds.
 
 ## Accuracy questions we cannot answer yet
 
-### 8. Consensus measures agreement, not accuracy
+### 8. A model reviewing its own work shares its blind spots
 
-Two cheap models can agree and both be wrong — especially on a systematic error, such as reading the same ambiguous column header the same wrong way. Whether this approach beats AIHub's 20% needs the golden dataset.
+The QA pass defaults to the same pin that extracted the table. A systematic misreading — the same ambiguous column header read the same wrong way twice — is invisible to it, because the second look is taken by the reader that made the first one.
 
-**What the script does:** reports agreement rate per column and labels it as agreement. It is never presented as accuracy.
+**What the script does:** nothing automatic. `qa.model` accepts any pin, so pointing the review at a different vendor is a one-line config change, and the routing already supports the mixed run that produces.
+
+**Ponder:** this is the one property consensus had that the review does not, and it is measurable — run the same golden set with `qa.model` empty and then set to a cross-vendor pin, and compare corrected-cell counts.
 
 ### 9. Scanned pages defeat the verbatim key check
 
@@ -150,9 +159,11 @@ The extraction hint now prefers the coded cause, and this is recorded in the res
 
 **Ponder:** the same ambiguity may sit in other column descriptions and only show up when a document happens to carry both candidate columns. Reading the remaining specs against golden, rather than waiting for a score to expose them, is cheap.
 
-### 20. The adjudicator is biased toward its own reading, and the size of it varies
+### 20. Why the consensus route was retired (measured)
 
-With `consensus.adjudicator` empty, the primary model adjudicates conflicts between itself and the second model. It is given the source text and may answer `neither`, so in principle it can concede.
+Kept because it is the evidence behind the current design, and because the implementation still exists on the `consensus-route` branch.
+
+With `consensus.adjudicator` empty, the primary model adjudicated conflicts between itself and the second model. It was given the source text and could answer `neither`, so in principle it could concede.
 
 Measured across five documents: **166 conflicts raised, 119 settled, 14 conceded to the second model (11.8% of those settled).** The distribution is what matters, because it is not uniform:
 
@@ -168,7 +179,7 @@ On `LRs_Application` it conceded nothing across 91 decisions — on the document
 
 A model asked to choose between its own reading and a rival's is not a neutral judge, but "it never concedes" would be too strong — the behaviour is document-dependent.
 
-**Ponder:** point `adjudicator` at a third pin and re-measure. Until that is done, the stage's value is unproven and `--no-adjudicate` is the cheaper configuration.
+**What was concluded:** the second extraction pass paid for a full re-read of every document to surface a set of cells that a biased judge then mostly waved through. The QA review keeps the part that was working — a model looking at the page again — and drops the part that was not.
 
 ## Cost and portability caveats
 
@@ -223,3 +234,75 @@ The failure needs a lost response rather than a lost request, so it is not the c
 **Fix:** hoist the UUID above the `for attempt` loop in `superapp_client.run`, so every attempt of one call carries one key. `OpenAIClient` inherits the same path, and OpenAI honours the header, so the fix covers both routes at once.
 
 **Until then:** a run's cost is an upper bound whenever `attempt > 1` appears in the ledger — the `attempt` column on each call is how to spot it.
+
+### 22. The QA route, measured against the consensus route it replaced
+
+Batch `3740ef65`, 2026-08-07, five golden documents (92 claim rows), Luna at `max` effort extracting and reviewing. Compared against batch `36c630dd`, the last consensus run on the same documents.
+
+| | Consensus (shipped) | QA route (shipped) |
+| --- | --- | --- |
+| Row recall | 89/92 — 96.7% | 88/92 — 95.7% |
+| Cell accuracy | 1585/1897 — **83.55%** | 1570/1875 — **83.73%** |
+| API calls | 421 | **15** |
+| Wall clock | 108.7 min | **39.7 min** |
+| Cost | $0.4267 | $0.3857 |
+
+**The accuracy difference is inside the noise.** Extraction is unstable run to run (#1), and the instability is larger than the effect: `LRs_Application` carries 60% of the scored cells and returned 93.0% in the consensus run against 88.5% here, at identical settings. That single swing is ~50 cells; the whole QA effect is 6. Read the table as *no measurable accuracy change*, not as an improvement — one run per configuration cannot support more.
+
+What is not inside the noise is the cost of getting there: **28× fewer calls and a third of the wall clock**, because 399 of the consensus run's calls were per-cell adjudications. On `LRs_Application` alone that was 276 calls and 81 minutes.
+
+**What QA itself contributed** is measurable without the cross-run confound, by rescoring the same run's `Raw Rows` (which are pre-QA) against its shipped table:
+
+| | Cells | Accuracy |
+| --- | --- | --- |
+| Extraction alone | 1573/1875 | 83.89% |
+| + QA as first built | 1570/1875 | 83.73% |
+| + QA, deletions proved too | 1576/1875 | **84.05%** |
+
+The stage applied 14 corrections. Ten were deletions to `N/A`, admitted without proof by a carve-out that reasoned removing a value cannot invent one. On the scanned `Loss Run_Report.pdf` those were the *only* corrections applicable at all, and all six deleted a `Description` that golden agreed with — `TRIP AND FALL`, `SLIP AND FALL`, `AUTO DAMAGE`. The carve-out was removed; deletions are now held to the same proof as replacements.
+
+The four proven replacements were good. Two fixed `Loss-4.pdf` outright (88.9% → 100%). Two more caught a real schema violation on `Loss_2.pdf`: `Valuation Date` had come back as `12/04/2020; 11/30/2020`, two dates joined into one cell, which the column spec explicitly forbids.
+
+**Ponder:** the honest state is that QA is roughly free accuracy-wise and much cheaper operationally. To claim more, run each configuration three times and compare distributions — #1 says a single run cannot separate a 6-cell effect from a 50-cell swing.
+
+### 23. The QA guard is only as good as the text layer
+
+A correction the review proposes is written into the table only when that value occurs in the document's text layer. That is what keeps a reviewer that can invent a value from putting one in the deliverable, and it inherits #9's limitation exactly: a scanned loss run has no text layer, so **every finding on such a document is reported and none is applied**.
+
+The stage still costs its calls there. What it buys is a warning list rather than a repaired table.
+
+**What the script does:** logs the situation explicitly during the run and writes a `qa_unverifiable` row into the Issues sheet, so a clean-looking table is never mistaken for a reviewed one. Each individual finding is also reported as `qa_unverified`.
+
+**Ponder:** the natural fix is a text layer — running OCR over the scanned pages purely to build the haystack the guard checks against, never to extract from. That is a local `pymupdf`/Tesseract step, not a form recognizer, so it does not reopen the cost objection from the call. Worth measuring against the alternative of trusting the review outright on scanned documents only.
+
+### 24. Telemetry cannot see time spent inside the poll loop
+
+A run of the extended sample set turned up a document that took **91.6 minutes
+of wall clock containing 9.3 minutes of recorded API calls** — four calls, near
+zero CPU, and 82 minutes nobody can account for.
+
+| Stage | Attempt | Status | Latency |
+| --- | --- | --- | --- |
+| layout | 1 | completed | 22.5s |
+| extract | 1 | completed | 150.2s |
+| qa | 1 | **error** — `HTTP 404: Response with id 'resp_…' not found` | 104.1s |
+| qa | 2 | completed | 279.0s |
+
+The gap is **sporadic, not structural**: across seven documents measured the same
+way, five show a gap under a minute and one shows 12 minutes. The same 36-page,
+127-row document that ran in 5.2 minutes end to end had no gap at all.
+
+**What is certainly true** is that the ledger cannot see this time. `_poll` has
+two paths that retry without recording anything — `except httpx.HTTPError:
+continue` and `if resp.status_code == 503: continue` — so every failed GET inside
+a poll loop is invisible. A call row reports one latency for an attempt no matter
+how many silent retries happened inside it. The `Idempotency-Key` gap (#21) has
+the same shape: what the ledger does not record, nobody can bill or debug.
+
+The 404 is worth noting on its own — the API losing a background response it had
+just created, which the client correctly treats as a failed attempt and retries.
+
+**Fix:** record a row per poll failure, or at minimum count them on the call row
+next to `poll_count`. Until then, `wall_clock_s` minus the sum of `latency_s` is
+the only signal that a run spent time somewhere it cannot explain, and it is
+worth checking after any batch that felt slow.

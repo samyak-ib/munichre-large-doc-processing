@@ -19,6 +19,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 
+from .cleaning import normalize_dashes
 from .merge import is_empty
 from .schema_loader import DATE_COLUMNS, MONEY_COLUMNS, TableSchema
 
@@ -118,6 +119,11 @@ ACCURACY_COLUMNS = (
     "cells_compared",
     "cells_correct",
     "cell_accuracy_pct",
+    # Mean per-row cell accuracy: each row counts once, regardless of how many
+    # scorable columns it carries. `_matched` covers the rows we found;
+    # `_overall` charges a row we missed as 0%.
+    "row_accuracy_matched_pct",
+    "row_accuracy_overall_pct",
     "cells_unscored_golden_blank",
     "exact_row_pct",
 )
@@ -139,7 +145,25 @@ MISMATCH_COLUMNS = ("model", "claim_number", "column", "extracted", "golden")
 _WS_RE = re.compile(r"\s+")
 _PUNCT_RE = re.compile(r"[^a-z0-9]+")
 _MONEY_RE = re.compile(r"[^0-9.\-]")
-_DATE_FORMATS = ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y", "%d/%m/%Y", "%b %d, %Y", "%B %d, %Y")
+# `%d-%b-%y` and its siblings are here for the same reason as in `cleaning`: a
+# document that prints `13-Jul-17` throughout would otherwise score zero on every
+# date column, measuring this parser rather than the extraction.
+_DATE_FORMATS = (
+    "%m/%d/%Y",
+    "%Y-%m-%d",
+    "%m/%d/%y",
+    "%d/%m/%Y",
+    "%b %d, %Y",
+    "%B %d, %Y",
+    "%d-%b-%Y",
+    "%d-%B-%Y",
+    "%d-%b-%y",
+    "%d-%B-%y",
+    "%m-%d-%Y",
+    "%m-%d-%y",
+    "%d %b %Y",
+    "%d %B %Y",
+)
 
 
 @dataclass
@@ -166,6 +190,10 @@ class AccuracyResult:
     exact_rows: int = 0
     # Cells we filled where golden is blank. Reported, never scored.
     spurious: int = 0
+    # Per matched row, that row's own cell accuracy. Kept per row rather than
+    # pooled because the pooled number is dominated by whichever rows happen to
+    # carry the most scorable cells.
+    row_accuracies: list[float] = field(default_factory=list)
 
     @property
     def row_recall(self) -> float:
@@ -192,6 +220,27 @@ class AccuracyResult:
         """Rows where every compared cell is right — the end-to-end number."""
         return self.exact_rows / self.rows_golden * 100 if self.rows_golden else 0.0
 
+    @property
+    def row_accuracy(self) -> float:
+        """Mean per-row cell accuracy over the rows that were found.
+
+        "How correct is the data we returned" — each row counts once, so a
+        20-cell row and a 3-cell row weigh the same. That is the difference from
+        `cell_accuracy`, which pools every cell and is therefore pulled toward
+        whichever rows carry the most scorable columns.
+        """
+        if not self.row_accuracies:
+            return 0.0
+        return sum(self.row_accuracies) / len(self.row_accuracies)
+
+    @property
+    def row_accuracy_overall(self) -> float:
+        """The same, but a golden row we never found scores zero rather than
+        being left out — recall and correctness in one number."""
+        if not self.rows_golden:
+            return 0.0
+        return sum(self.row_accuracies) / self.rows_golden
+
     def summary_row(self, **context: Any) -> dict[str, Any]:
         row = {
             "model": self.model,
@@ -205,6 +254,8 @@ class AccuracyResult:
             "cells_compared": self.cells_compared,
             "cells_correct": self.cells_correct,
             "cell_accuracy_pct": round(self.cell_accuracy, 1),
+            "row_accuracy_matched_pct": round(self.row_accuracy, 1),
+            "row_accuracy_overall_pct": round(self.row_accuracy_overall, 1),
             "cells_unscored_golden_blank": self.spurious,
             "exact_row_pct": round(self.exact_row_rate, 1),
         }
@@ -215,31 +266,83 @@ class AccuracyResult:
 def load_golden(path: Path, document_name: str) -> list[dict[str, str]] | None:
     """Golden rows for one document, or None when the file has no entry for it.
 
-    Filenames are matched loosely: a document is often renamed after the golden
-    set was built, so a normalized containment match either way counts.
+    Every sheet is read. The golden workbook grew a second sheet when the sample
+    set was extended, and taking only the first silently scores the new documents
+    as having no golden at all.
     """
     if not path.exists():
         return None
-    workbook = load_workbook(path, data_only=True)
-    sheet = workbook[workbook.sheetnames[0]]
-    header = [c.value for c in sheet[1]]
+    by_document = _golden_index(path)
+    filename = _resolve_golden_filename(list(by_document), document_name)
+    if filename is None:
+        return None
+    return [
+        {
+            schema_column: _as_text(record.get(golden_column))
+            for golden_column, schema_column in GOLDEN_TO_SCHEMA.items()
+        }
+        for record in by_document[filename]
+    ]
 
+
+def _golden_index(path: Path) -> dict[str, list[dict[str, Any]]]:
+    """Every golden row in the workbook, grouped by the filename it belongs to."""
+    workbook = load_workbook(path, data_only=True)
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    try:
+        for name in workbook.sheetnames:
+            sheet = workbook[name]
+            header = [c.value for c in sheet[1]]
+            if FILENAME_COLUMN not in header:
+                continue
+            for raw in sheet.iter_rows(min_row=2, values_only=True):
+                if not any(v is not None for v in raw):
+                    continue
+                record = dict(zip(header, raw))
+                document = str(record.get(FILENAME_COLUMN, "") or "").strip()
+                if document:
+                    grouped.setdefault(document, []).append(record)
+    finally:
+        workbook.close()
+    return grouped
+
+
+def _resolve_golden_filename(candidates: list[str], document_name: str) -> str | None:
+    """Which golden filename this document is, or None.
+
+    An exact match always wins. Loose containment exists because a document is
+    often renamed after the golden set was built — but with 29 documents whose
+    names are substrings of one another it is dangerous on its own: `Loss
+    Runs.pdf` is contained in `WC Loss Runs.pdf`, `GLI Loss Runs.PDF` and six
+    more, and a containment-first rule scores it against 155 rows from eight
+    different documents. So containment is the fallback, and when it is
+    ambiguous the closest name by similarity wins rather than all of them.
+    """
     wanted = _normalize_filename(document_name)
-    rows: list[dict[str, str]] = []
-    for raw in sheet.iter_rows(min_row=2, values_only=True):
-        if not any(v is not None for v in raw):
-            continue
-        record = dict(zip(header, raw))
-        if not _filenames_match(_normalize_filename(str(record.get(FILENAME_COLUMN, ""))), wanted):
-            continue
-        rows.append(
-            {
-                schema_column: _as_text(record.get(golden_column))
-                for golden_column, schema_column in GOLDEN_TO_SCHEMA.items()
-            }
-        )
-    workbook.close()
-    return rows or None
+    if not wanted:
+        return None
+
+    exact = [c for c in candidates if _normalize_filename(c) == wanted]
+    if exact:
+        return exact[0]
+
+    # A golden entry that carries the whole document name inside a longer one is
+    # the renamed-original case this fallback exists for, and it is much stronger
+    # evidence than the reverse. `LRs_Application_CAU CPP MAR PKG WCO Loss
+    # Runs.PDF` appears in golden under a GUID-prefixed name that contains it in
+    # full, while a *different* golden entry named `CAU CPP MAR PKG WCO Loss
+    # Runs.PDF` is merely contained in it — they are two transcriptions of one
+    # document and they disagree, so which one is chosen has to be deliberate.
+    superset = [c for c in candidates if wanted and wanted in _normalize_filename(c)]
+    subset = [c for c in candidates if _normalize_filename(c) and _normalize_filename(c) in wanted]
+    for group in (superset, subset):
+        if len(group) == 1:
+            return group[0]
+        if group:
+            # Longest name wins: it is the most specific match. Sorted first so
+            # the result never depends on the order the sheets were read in.
+            return max(sorted(group), key=lambda c: len(_normalize_filename(c)))
+    return None
 
 
 def score(
@@ -289,6 +392,7 @@ def score(
             continue
         result.rows_matched += 1
         row_correct = True
+        row_compared = row_correct_cells = 0
         for column in scored_columns:
             actual, expected = found.get(column, ""), golden_row.get(column, "")
             if is_empty(actual) and is_empty(expected):
@@ -302,8 +406,10 @@ def score(
                     continue
             score_entry = result.columns[column]
             score_entry.compared += 1
+            row_compared += 1
             if values_match(column, actual, expected, policy):
                 score_entry.correct += 1
+                row_correct_cells += 1
             else:
                 row_correct = False
                 result.mismatches.append(
@@ -315,6 +421,10 @@ def score(
                         "golden": expected,
                     }
                 )
+        # A row with nothing scorable — golden blank across the board — would
+        # otherwise enter the mean as 0% and read as a failure.
+        if row_compared:
+            result.row_accuracies.append(row_correct_cells / row_compared * 100)
         if row_correct:
             result.exact_rows += 1
 
@@ -487,7 +597,7 @@ def _as_date(value: str) -> date | None:
     The whole string is tried before the first token, because `Jan 5, 2023`
     contains spaces that matter while `2023-01-05 00:00:00` has a time to drop.
     """
-    text = str(value).strip()
+    text = normalize_dashes(str(value).strip())
     if not text:
         return None
     for candidate in (text, text.split(" ")[0]):

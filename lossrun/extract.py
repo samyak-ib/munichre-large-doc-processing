@@ -69,6 +69,25 @@ def _save_raw_response(debug_dir: Path | None, model: str, label: str, text: str
     (debug_dir / f"raw-{safe}.txt").write_text(text)
 
 
+def document_chunks(path: Path, profile: DocProfile, cfg: ChunkingConfig) -> list[Chunk]:
+    """The page windows this document is read in.
+
+    Shared with the QA stage, which reviews each chunk's rows against that same
+    chunk's pages. Rebuilding the windows a second way would misalign the two.
+    """
+    if profile.route == "single_shot":
+        return [
+            Chunk(
+                index=1,
+                total=1,
+                start_page=1,
+                end_page=profile.pages,
+                data=path.read_bytes(),
+            )
+        ]
+    return build_chunks(path, profile.pages, cfg)
+
+
 def extract_pdf(
     client: SuperAppClient,
     *,
@@ -86,18 +105,7 @@ def extract_pdf(
     instructions = extraction_instructions(schema, layout.data)
     row_columns = [c.name for c in schema.row_columns]
 
-    if profile.route == "single_shot":
-        chunks = [
-            Chunk(
-                index=1,
-                total=1,
-                start_page=1,
-                end_page=profile.pages,
-                data=path.read_bytes(),
-            )
-        ]
-    else:
-        chunks = build_chunks(path, profile.pages, cfg)
+    chunks = document_chunks(path, profile, cfg)
     result.chunks = len(chunks)
 
     anchors: list[list[str]] = []

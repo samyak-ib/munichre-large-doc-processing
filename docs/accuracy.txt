@@ -1,0 +1,6 @@
+Generic Table - 10 rows 4 columns
+
+1. Total rows extracted - 9 extracted out of 10
+2. Row level precision accuracy - 9/10 extracted - How correct is the data? (Row level accuracy over the cell average)
+3. Cell level accuracy
+4. Telemetry (per page input/output token per run on a call basis) - Total input cost + Total output cost per document

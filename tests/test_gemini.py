@@ -27,7 +27,6 @@ def make_config(**overrides) -> Config:
     return Config(
         api=ApiConfig("https://superapp.invalid/api/v1", 0, 30, 5, 1, overrides.pop("max_retries", 0)),
         primary_model=LUNA,
-        consensus_models=(LUNA, GEMINI),
         chunking=ChunkingConfig(50, 2, 5, 12, 20 * 1024 * 1024, 3),
         model_overrides=overrides.pop("model_overrides", {}),
         pricing={GEMINI: Pricing(0.2, 0.8), LUNA: Pricing(0.2, 0.8)},

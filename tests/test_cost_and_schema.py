@@ -1,11 +1,10 @@
-"""Cost arithmetic, the schema contract, and cross-model comparison."""
+"""Cost arithmetic, the schema contract, and reasoning-effort resolution."""
 
 from __future__ import annotations
 
 import pytest
 
 from lossrun.config import Pricing
-from lossrun.consensus import compare
 from lossrun.schema_loader import (
     BACKFILL_FROM_LAYOUT,
     DOC_LEVEL_COLUMNS,
@@ -126,33 +125,6 @@ def test_every_column_carries_its_prompt_from_the_schema():
     assert 10_000 < SCHEMA.prompt_bytes() < 64 * 1024
 
 
-def test_consensus_scores_agreement_and_lists_disagreements():
-    a = [{"Policy Number": "P", "Claim Number": "C1", "Claimant Name": "A", "Loss State": "CA"}]
-    b = [{"Policy Number": "P", "Claim Number": "C1", "Claimant Name": "A", "Loss State": "NY"}]
-    result = compare(a, b, schema=SCHEMA, primary_model="m1", other_model="m2")
-    assert result.compared_rows == 1
-    assert result.agreement_by_column["Loss State"] == 0.0
-    assert result.agreement_by_column["Claim Number"] == 100.0
-    assert len(result.conflicts) == 1
-    assert result.rows is a  # the primary model's table is what ships
-
-
-def test_consensus_reports_rows_each_model_missed():
-    a = [{"Claim Number": "C1", "Claimant Name": "A"}, {"Claim Number": "C2", "Claimant Name": "B"}]
-    b = [{"Claim Number": "C1", "Claimant Name": "A"}, {"Claim Number": "C3", "Claimant Name": "C"}]
-    result = compare(a, b, schema=SCHEMA, primary_model="m1", other_model="m2")
-    assert len(result.only_primary) == 1
-    assert len(result.only_other) == 1
-    assert result.compared_rows == 1
-
-
-def test_identical_extractions_agree_completely():
-    rows = [{"Claim Number": "C1", "Claimant Name": "A", "Loss State": "CA"}]
-    result = compare(rows, [dict(rows[0])], schema=SCHEMA, primary_model="m", other_model="m")
-    assert result.conflicts == []
-    assert result.overall_agreement == 100.0
-
-
 def test_stage_defaults_stay_within_the_universally_supported_levels():
     """A stage default applies to every model, so it cannot be OpenAI-only.
 
@@ -171,7 +143,7 @@ def test_the_shipped_config_puts_max_on_an_openai_pin_only():
     from lossrun.config import VALID_EFFORTS, load_config
 
     config = load_config(require_token=False)
-    for model in config.consensus_models:
+    for model in config.routed_models:
         effort = config.extract_effort_for(model)
         if effort in {"xhigh", "max"}:
             assert model.startswith("openai/"), f"{effort} is OpenAI-only, not valid for {model}"
@@ -194,7 +166,6 @@ def _config_with(overrides, *, extract=None, forced=None):
     return Config(
         api=ApiConfig("https://x/api/v1", 0, 10, 10, 1, 0),
         primary_model="openai/gpt-5.6-luna",
-        consensus_models=("openai/gpt-5.6-luna", "gemini/gemini-3.6-flash"),
         chunking=ChunkingConfig(50, 2, 5, 12, 1, 3),
         model_overrides=overrides,
         pricing={},
