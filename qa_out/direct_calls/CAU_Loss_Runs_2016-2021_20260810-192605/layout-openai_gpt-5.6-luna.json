@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Description": "Cause of Loss",
+    "Claim Status": "Status",
+    "Accident Date": "Loss Date",
+    "Report Date": "Report Date",
+    "Closed Date": "Closed Date",
+    "Policy Number": "Policy Number",
+    "Indemnity Paid": "Paid Loss",
+    "Indemnity Reserve": "Loss Reserves",
+    "Expense Paid": "Allocated Expenses",
+    "Recovery Salvage Subro Reins": "Recovery Total",
+    "Claim Total": "Incurred Loss",
+    "Valuation Date": "Loss Date as of",
+    "Line of Business": "LOB",
+    "Policy Effective Date": "Policy Period",
+    "Policy Expiration Date": "Policy Period",
+    "Policy Year": "Policy Period",
+    "Insurer Loss Run": "The Main Street America Group",
+    "Insured": "Insured Name"
+  },
+  "absent_columns": [
+    "Claim Number",
+    "Claimant Name",
+    "Loss State",
+    "Occurrence ID",
+    "Expense Reserved",
+    "Recovery Deductible",
+    "Policy Total"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "one individual loss incident per table row",
+  "date_format": "M/D/YYYY and MM/DD/YYYY",
+  "currency_format": "Dollar amounts with a $ symbol and two decimal places; comma grouping is used inconsistently",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "Precision Gutters Llc",
+    "Valuation Date": "8/15/2022"
+  },
+  "notes": "The policy number appears above the table as a block-level value and is not repeated in each row. Policy Period is vertically merged across groups of loss rows. The table uses Cause of Loss for the coded loss description and Loss Exposure as a separate categorical exposure field. No claim number or claimant column is present."
+}

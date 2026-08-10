@@ -117,6 +117,9 @@ def extract_pdf(
             total_pages=profile.pages,
             instructions=instructions,
             row_columns=row_columns,
+            key_columns=schema.key_columns,
+            document_label=schema.document_label,
+            row_label=schema.row_label,
             anchors=anchors,
             cfg=cfg,
             result=result,
@@ -124,7 +127,7 @@ def extract_pdf(
             effort=effort,
         )
         result.rows.extend(rows)
-        anchors = _trailing_anchors(rows, cfg.overlap_anchor_rows)
+        anchors = _trailing_anchors(rows, cfg.overlap_anchor_rows, schema.key_columns)
 
     return result
 
@@ -144,7 +147,7 @@ def extract_text(
     row_columns = [c.name for c in schema.row_columns]
     instructions = extraction_instructions(schema, layout.data)
 
-    prompt = text_extraction_prompt(text, label)
+    prompt = text_extraction_prompt(text, label, row_label=schema.row_label)
     budget = MAX_TEXT_BYTES - len(instructions.encode()) - TEXT_PROMPT_HEADROOM
     if len(prompt.encode()) > budget:
         kept = _clip_to_bytes(text, max(budget, 0))
@@ -155,7 +158,7 @@ def extract_text(
             label,
             "text",
         )
-        prompt = text_extraction_prompt(kept, label)
+        prompt = text_extraction_prompt(kept, label, row_label=schema.row_label)
 
     try:
         run = client.run(
@@ -188,6 +191,9 @@ def _extract_chunk(
     total_pages: int,
     instructions: str,
     row_columns: list[str],
+    key_columns: tuple[str, ...] = KEY_COLUMNS,
+    document_label: str = "insurance loss-run report",
+    row_label: str = "claim",
     anchors: list[list[str]],
     cfg: ChunkingConfig,
     result: ExtractResult,
@@ -207,6 +213,9 @@ def _extract_chunk(
             total_pages=total_pages,
             anchors=anchors,
             resume_after=resume_after,
+            key_columns=key_columns,
+            document_label=document_label,
+            row_label=row_label,
         )
         label = chunk.label if attempt == 0 else f"{chunk.label} resume {attempt}"
         try:
@@ -349,9 +358,11 @@ def _clip_to_bytes(text: str, budget: int) -> str:
     return encoded[:budget].decode(errors="ignore")
 
 
-def _row_key_values(row: RawRow) -> list[str]:
-    return [row.values.get(name, "N/A") for name in KEY_COLUMNS]
+def _row_key_values(row: RawRow, key_columns: tuple[str, ...] = KEY_COLUMNS) -> list[str]:
+    return [row.values.get(name, "N/A") for name in key_columns]
 
 
-def _trailing_anchors(rows: list[RawRow], limit: int) -> list[list[str]]:
-    return [_row_key_values(r) for r in rows[-limit:]] if rows else []
+def _trailing_anchors(
+    rows: list[RawRow], limit: int, key_columns: tuple[str, ...] = KEY_COLUMNS
+) -> list[list[str]]:
+    return [_row_key_values(r, key_columns) for r in rows[-limit:]] if rows else []

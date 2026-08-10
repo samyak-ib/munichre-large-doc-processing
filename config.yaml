@@ -17,6 +17,14 @@ api:
   # attempts is not sufficient: a 6.9 MiB scan failed all three, while the same
   # file uploaded cleanly earlier the same day.
   max_retries: 4
+  # How many documents `lossrun extract` runs at once in a multi-document
+  # batch — independent of `max_concurrent_calls` above, which is per-document.
+  # Raising this reintroduces the same concurrent-upload risk noted above, now
+  # at the batch level (several documents uploading around the same time), so
+  # watch telemetry for 408/429s before raising it further, especially when
+  # routed through SuperApp rather than direct to OpenAI/Gemini. Override per
+  # run with `--concurrency`.
+  max_concurrent_documents: 3
 
 models:
   # One model extracts; the QA stage below reviews what it produced. There is no
@@ -29,6 +37,9 @@ models:
       # call. Effort must be set per model, not globally: max is OpenAI-only and
       # a Gemini pin rejects it with a 400.
       effort: max
+      # Same reasoning applied to the layout-discovery call: max on this model,
+      # everything else keeps the reasoning.layout default below.
+      layout_effort: max
     openai/gpt-5.6-terra:
       max_pages_per_chunk: 50
     openai/gpt-5.6-sol:

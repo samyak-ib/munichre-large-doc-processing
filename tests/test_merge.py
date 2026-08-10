@@ -35,8 +35,7 @@ def test_overlapping_chunks_collapse_to_one_row():
     ]
     result = merge_rows(rows, SCHEMA)
     assert len(result.rows) == 1
-    assert result.duplicate_keys == 1
-    assert result.conflicts == []
+    assert result.rows_merged == 1
 
 
 def test_merge_fills_gaps_from_the_later_chunk():
@@ -48,15 +47,17 @@ def test_merge_fills_gaps_from_the_later_chunk():
     assert result.rows[0]["Loss State"] == "CA"
 
 
-def test_conflicting_values_keep_the_first_and_record_the_loser():
+def test_conflicting_values_are_kept_as_separate_rows():
+    """Same claim number and claimant, but a real disagreement elsewhere (CA vs
+    NY) means these are not treated as the same claim — they ship as two rows
+    rather than silently collapsing to one."""
     rows = [
         RawRow({"Claim Number": "C1", "Claimant Name": "A", "Loss State": "CA"}, "m", "c1", "1-50"),
         RawRow({"Claim Number": "C1", "Claimant Name": "A", "Loss State": "NY"}, "m", "c2", "49-98"),
     ]
     result = merge_rows(rows, SCHEMA)
-    assert result.rows[0]["Loss State"] == "CA"
-    assert len(result.conflicts) == 1
-    assert result.conflicts[0].discarded == "NY"
+    assert len(result.rows) == 2
+    assert [r["Loss State"] for r in result.rows] == ["CA", "NY"]
 
 
 def test_distinct_claims_are_not_merged():
@@ -65,6 +66,36 @@ def test_distinct_claims_are_not_merged():
         RawRow({"Policy Number": "P", "Claim Number": "C2", "Claimant Name": "A"}, "m", "c1", "1"),
     ]
     assert len(merge_rows(rows, SCHEMA).rows) == 2
+
+
+def test_same_key_but_different_claims_are_not_merged():
+    """Two rows can share (Policy Number, Claim Number, Claimant Name) and
+    still be distinct claims. A real disagreement elsewhere (different
+    accident dates) must keep them separate rather than collapsing on the key."""
+    rows = [
+        RawRow(
+            {"Policy Number": "P-1", "Claim Number": "C1", "Claimant Name": "A", "Accident Date": "01/01/2020"},
+            "m", "c1", "1",
+        ),
+        RawRow(
+            {"Policy Number": "P-1", "Claim Number": "C1", "Claimant Name": "A", "Accident Date": "02/02/2021"},
+            "m", "c1", "1",
+        ),
+    ]
+    assert len(merge_rows(rows, SCHEMA).rows) == 2
+
+
+def test_blank_identity_columns_do_not_collapse_distinct_claims():
+    """A document with no claim number and no claimant column, like
+    `CAU Loss Runs 2016-2021.PDF` in docs/mistakes.md: every row normalizes to
+    the same (mostly blank) key, but the rows are still distinct claims and
+    must not collapse to one."""
+    rows = [
+        RawRow({"Policy Number": "P-1", "Accident Date": "01/01/2020", "Indemnity Paid": "92839"}, "m", "c1", "1"),
+        RawRow({"Policy Number": "P-1", "Accident Date": "02/02/2020", "Indemnity Paid": "10906"}, "m", "c1", "1"),
+        RawRow({"Policy Number": "P-1", "Accident Date": "03/03/2020", "Indemnity Paid": "500"}, "m", "c1", "1"),
+    ]
+    assert len(merge_rows(rows, SCHEMA).rows) == 3
 
 
 def test_row_order_follows_first_appearance():

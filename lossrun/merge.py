@@ -1,8 +1,15 @@
-"""Row-key merge across chunks, plus value normalization.
+"""Whole-row merge across chunks, plus value normalization.
 
-Chunks overlap, so the same claim can arrive twice. Merging is keyed on
-(Policy Number, Claim Number, Claimant Name) — the same primary key used to match
-against golden data. Disagreements are recorded, never silently resolved.
+Chunks overlap, so the same claim can arrive twice. A fixed key — e.g.
+(Policy Number, Claim Number, Claimant Name), the loss run's primary key for
+matching against golden data — is not reliable for deciding this: a document
+that prints no claim number and no claimant collapses every distinct claim
+onto the same key, and two genuinely distinct claims can share it even when
+those columns are present. So merging instead looks at the whole row: two
+rows are the same claim if no column states two different things, treating a
+blank cell as "unknown" rather than as a disagreement. A blank filled in by
+the other row is not a disagreement; a real one (both sides state a value,
+and it differs) means the rows are kept separate rather than merged.
 """
 
 from __future__ import annotations
@@ -11,7 +18,7 @@ import re
 from dataclasses import dataclass, field
 
 from .extract import RawRow
-from .schema_loader import BACKFILL_FROM_LAYOUT, KEY_COLUMNS, TableSchema
+from .schema_loader import KEY_COLUMNS, TableSchema
 
 NA = "N/A"
 _EMPTY_VALUES = {"", "n/a", "na", "none", "null", "-", "--"}
@@ -19,38 +26,34 @@ _WS_RE = re.compile(r"\s+")
 
 
 @dataclass
-class Conflict:
-    key: tuple[str, ...]
-    column: str
-    kept: str
-    discarded: str
-    kept_from: str
-    discarded_from: str
-
-
-@dataclass
 class MergeResult:
     rows: list[dict[str, str]] = field(default_factory=list)
-    conflicts: list[Conflict] = field(default_factory=list)
-    duplicate_keys: int = 0
+    # How many raw rows were folded into an already-accumulated row, rather
+    # than kept as their own distinct row.
+    rows_merged: int = 0
 
-    def by_key(self) -> dict[tuple[str, ...], dict[str, str]]:
-        return {normalize_key(r): r for r in self.rows}
+    def by_key(self, key_columns: tuple[str, ...] = KEY_COLUMNS) -> dict[tuple[str, ...], dict[str, str]]:
+        return {normalize_key(r, key_columns): r for r in self.rows}
 
 
 def is_empty(value: str | None) -> bool:
     return value is None or value.strip().lower() in _EMPTY_VALUES
 
 
-def normalize_key(values: dict[str, str]) -> tuple[str, ...]:
+def normalize_key(
+    values: dict[str, str], key_columns: tuple[str, ...] = KEY_COLUMNS
+) -> tuple[str, ...]:
     """Case- and whitespace-insensitive row identity.
 
     Whitespace is removed outright rather than collapsed: models disagree on
     whether a wrapped identifier is `001-WC19A-78355` or `001- WC19A-78355`, and
     treating those as different claims splits one row into two. Only the key used
     for merging and diffing is stripped; the printed value keeps its spacing.
+
+    `key_columns` defaults to the loss run's (Policy Number, Claim Number,
+    Claimant Name); callers holding a different schema pass `schema.key_columns`.
     """
-    return tuple(_key_part(values.get(name, "")) for name in KEY_COLUMNS)
+    return tuple(_key_part(values.get(name, "")) for name in key_columns)
 
 
 def _key_part(value: str) -> str:
@@ -60,43 +63,58 @@ def _key_part(value: str) -> str:
 
 
 def merge_rows(raw_rows: list[RawRow], schema: TableSchema) -> MergeResult:
-    """Collapse rows sharing a key, keeping the first non-empty value per cell."""
+    """Collapse rows that read as the same claim, keeping the first non-empty value per cell.
+
+    Two rows are the same claim if `_consistent` finds no column where they
+    state two different things — not if they share a fixed key. See the
+    module docstring for why a fixed key is neither necessary nor sufficient
+    for row identity.
+    """
     result = MergeResult()
-    merged: dict[tuple[str, ...], dict[str, str]] = {}
-    provenance: dict[tuple[str, ...], dict[str, str]] = {}
-    order: list[tuple[str, ...]] = []
+    columns = tuple(c.name for c in schema.row_columns)
+    identifier_columns = set(schema.identifier_columns)
+    merged: list[dict[str, str]] = []
 
     for raw in raw_rows:
-        key = normalize_key(raw.values)
-        source = f"{raw.model} {raw.chunk}"
-        if key not in merged:
-            merged[key] = dict(raw.values)
-            provenance[key] = {c: source for c in raw.values}
-            order.append(key)
+        target = next(
+            (existing for existing in merged if _consistent(existing, raw.values, columns, identifier_columns)),
+            None,
+        )
+        if target is None:
+            merged.append(dict(raw.values))
             continue
 
-        result.duplicate_keys += 1
-        target = merged[key]
-        for column, value in raw.values.items():
-            existing = target.get(column)
-            if is_empty(existing):
+        result.rows_merged += 1
+        for column in columns:
+            value = raw.values.get(column, "")
+            if is_empty(target.get(column)) and not is_empty(value):
                 target[column] = value
-                provenance[key][column] = source
-            elif not is_empty(value) and _differs(existing, value):
-                result.conflicts.append(
-                    Conflict(
-                        key=key,
-                        column=column,
-                        kept=existing,
-                        discarded=value,
-                        kept_from=provenance[key].get(column, ""),
-                        discarded_from=source,
-                    )
-                )
 
-    for key in order:
-        result.rows.append(merged[key])
+    result.rows = merged
     return result
+
+
+def _consistent(
+    a: dict[str, str], b: dict[str, str], columns: tuple[str, ...], identifier_columns: set[str]
+) -> bool:
+    """Whether `a` and `b` could be the same claim: no column states two different things.
+
+    A blank on either side is "unknown", not a disagreement. Identifier
+    columns (the row's key, plus anything else flagged `identifier`) compare
+    with `_key_part`'s full whitespace strip, so a line-wrapped identifier
+    still matches itself; every other column compares with `_differs`'s
+    looser whitespace collapse, so free text keeps its meaningful spacing.
+    """
+    for column in columns:
+        av, bv = a.get(column, ""), b.get(column, "")
+        if is_empty(av) or is_empty(bv):
+            continue
+        if column in identifier_columns:
+            if _key_part(av) != _key_part(bv):
+                return False
+        elif _differs(av, bv):
+            return False
+    return True
 
 
 def _differs(a: str, b: str) -> bool:
@@ -126,16 +144,16 @@ def finalize_rows(
 ) -> list[dict[str, str]]:
     """Turn one model's per-chunk rows into its final table.
 
-    Merge the seams, carry a block-level policy number down where the layout
-    says there is one, then fill the document-level values. Formatting is left
-    to `cleaning.clean_table`, which the caller applies last.
+    Merge the seams, carry a block-level group value down where the layout says
+    there is one, then fill the document-level values. Formatting is left to
+    `cleaning.clean_table`, which the caller applies last.
     """
     merged = merge_rows(raw_rows, schema)
     rows = [normalize_row(r, schema) for r in merged.rows]
     if block_header_policy:
-        filled = fill_block_policy_numbers(rows)
+        filled = fill_block_policy_numbers(rows, schema.group_column)
         if filled and log:
-            log(f"  filled {filled} block-level policy numbers")
+            log(f"  filled {filled} block-level {schema.group_column!r} values")
     stamp_document_values(rows, document_values or {}, schema)
     return rows
 
@@ -143,12 +161,12 @@ def finalize_rows(
 def stamp_document_values(
     rows: list[dict[str, str]], document_values: dict[str, str], schema: TableSchema
 ) -> None:
-    """Fill Insured and Valuation Date from layout discovery, in place.
+    """Fill the schema's backfill columns from layout discovery, in place.
 
-    Only rows that came back without a value are touched, so a valuation date the
+    Only rows that came back without a value are touched, so a value the
     extraction pass read from a section header outranks the document-level one.
     """
-    names = {n for n in BACKFILL_FROM_LAYOUT if n in set(schema.names)}
+    names = schema.backfill_columns
     for row in rows:
         for name in names:
             if is_empty(row.get(name)):
@@ -156,19 +174,21 @@ def stamp_document_values(
                 row[name] = value.strip() if value and not is_empty(value) else NA
 
 
-def fill_block_policy_numbers(rows: list[dict[str, str]]) -> int:
-    """Carry a block-level policy number down to the rows beneath it.
+def fill_block_policy_numbers(rows: list[dict[str, str]], column: str = "Policy Number") -> int:
+    """Carry a block-level value down to the rows beneath it.
 
-    Used when layout discovery reports the policy number sits above a group of
-    claim rows rather than in its own column. Returns how many rows were filled.
+    Used when layout discovery reports that `column` sits above a group of rows
+    rather than in its own column — the loss run's Policy Number by default, or
+    whatever a custom schema's `schema.group_column` names. Returns how many
+    rows were filled.
     """
     filled = 0
     current = ""
     for row in rows:
-        value = row.get("Policy Number", "")
+        value = row.get(column, "")
         if not is_empty(value):
             current = value
         elif current:
-            row["Policy Number"] = current
+            row[column] = current
             filled += 1
     return filled

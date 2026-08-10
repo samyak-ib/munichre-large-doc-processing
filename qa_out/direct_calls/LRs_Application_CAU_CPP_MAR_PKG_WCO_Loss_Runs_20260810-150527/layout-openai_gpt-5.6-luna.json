@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Policy Number / Claim Number",
+    "Claimant Name": "Claimant Name / Claim Description",
+    "Description": "Claimant Name / Claim Description",
+    "Claim Status": "Date of Loss / Status",
+    "Accident Date": "Date of Loss / Status",
+    "Closed Date": "Date of Loss / Status",
+    "Loss State": "Risk Location",
+    "Policy Number": "Policy Number / Claim Number",
+    "Indemnity Paid": "Paid Loss (Indemnity)",
+    "Indemnity Reserve": "Reserves / Recoveries*",
+    "Expense Paid": "Paid Expenses",
+    "Recovery Salvage Subro Reins": "Reserves / Recoveries*",
+    "Claim Total": "Gross Incurred / Net Incurred",
+    "Valuation Date": "Report as of",
+    "Line of Business": "LOB",
+    "Policy Effective Date": "Policy Period",
+    "Policy Expiration Date": "Policy Period",
+    "Policy Year": "Policy Period",
+    "Policy Total": "Net Incurred",
+    "Insured": "ACCOUNT"
+  },
+  "absent_columns": [
+    "Report Date",
+    "Occurrence ID",
+    "Expense Reserved",
+    "Recovery Deductible",
+    "Insurer Loss Run"
+  ],
+  "policy_number_placement": "column",
+  "row_granularity": "one row represents one claim",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$1,234.56",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "DREAMWORKS REMODELING LLC",
+    "Valuation Date": "Jan 5, 2023"
+  },
+  "notes": "LOSS RUN DETAIL headers repeat on continuation pages. Policy Number and Claim Number share one column, and Policy Period is a two-line field. Date of Loss / Status is a combined field: the Date of Loss appears first, followed by CLOSED and the closed date. Claim rows use a two-line layout, with coded claim causes and accident narratives in separate fields. The coded cause under the Claimant Name / Claim Description field takes priority over Accident Description. LOSS RUN SUMMARY contains policy-level aggregate values under Net Incurred; do not use individual claim totals as Policy Total."
+}

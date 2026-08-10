@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim Number",
+    "Claimant Name": "Claimant Name",
+    "Claim Status": "Claim Status",
+    "Accident Date": "Loss Date",
+    "Policy Number": "Policy Number",
+    "Indemnity Paid": "Payment Loss",
+    "Indemnity Reserve": "Net Open Reserves",
+    "Expense Paid": "Payment Expenses",
+    "Recovery Salvage Subro Reins": "Recovery",
+    "Claim Total": "Total Net Payment",
+    "Policy Effective Date": "Effective Date",
+    "Insurer Loss Run": "Motorists Mutual Insurance Company",
+    "Policy Total": "Grand Total",
+    "Insured": "Policy Holder"
+  },
+  "absent_columns": [
+    "Description",
+    "Report Date",
+    "Closed Date",
+    "Loss State",
+    "Occurrence ID",
+    "Recovery Deductible",
+    "Expense Reserved",
+    "Valuation Date",
+    "Line of Business",
+    "Policy Expiration Date",
+    "Policy Year"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "one claim block, with one row per coverage/loss type element",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "0.00 or 1,668.30, with comma separators and two decimal places; no currency symbol",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "LEGACY CONSTRUCTION,SERVICES LLC ET AL",
+    "Valuation Date": "N/A"
+  },
+  "notes": "Each claim is introduced by a repeating block containing Account Number, Policy Number, Policy Holder, Claim Number, Accident Facts, Claim Status, Effective Date, and Loss Date, followed by a detail table. A claim may contain multiple coverage/loss type rows. The block for Claim Number 5773270 begins on page 2 and continues onto page 3. Page 4 contains summary tables with a Grand Total; the report has one policy number. Date Run and footer dates are report production dates, not Valuation Date."
+}

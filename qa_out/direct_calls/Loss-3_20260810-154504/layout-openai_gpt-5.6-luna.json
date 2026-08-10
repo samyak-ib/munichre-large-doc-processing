@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Policy Number": "Policy #:",
+    "Valuation Date": "As of:",
+    "Policy Effective Date": "Policy period:",
+    "Policy Expiration Date": "Policy period:",
+    "Policy Year": "Policy period:",
+    "Insurer Loss Run": "Company name:",
+    "Insured": "Name insured:"
+  },
+  "absent_columns": [
+    "Claim Number",
+    "Claimant Name",
+    "Description",
+    "Claim Status",
+    "Accident Date",
+    "Report Date",
+    "Closed Date",
+    "Loss State",
+    "Occurrence ID",
+    "Indemnity Paid",
+    "Indemnity Reserve",
+    "Expense Paid",
+    "Expense Reserved",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible",
+    "Claim Total",
+    "Line of Business",
+    "Policy Total"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "No claim rows; each policy block represents a policy period with no claims",
+  "date_format": "M/D/YYYY",
+  "currency_format": "N/A",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "CAMERON COUNTY",
+    "Valuation Date": "2/19/2019"
+  },
+  "notes": "The document contains three repeating policy blocks. Each block includes As of:, Policy, Name insured:, Policy #:, Company name:, Agent name:, Source, Claims, Policy period:, and No claims. There is no main claim table or repeating claim-row header."
+}

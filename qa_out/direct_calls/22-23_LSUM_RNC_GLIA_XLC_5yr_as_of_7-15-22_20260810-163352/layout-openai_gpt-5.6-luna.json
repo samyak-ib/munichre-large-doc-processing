@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim #",
+    "Claimant Name": "Claimant",
+    "Claim Status": "Status",
+    "Accident Date": "DOL",
+    "Closed Date": "Close Date",
+    "Indemnity Paid": "Indem Paid",
+    "Indemnity Reserve": "Indem Reserve",
+    "Expense Paid": "Defense Cost Paid",
+    "Expense Reserved": "Defense Cost Reserve",
+    "Policy Total": "TOTAL\nINCURRED",
+    "Valuation Date": "VALUATION\nDATE",
+    "Line of Business": "N/A",
+    "Policy Effective Date": "POLICY PERIOD",
+    "Policy Expiration Date": "POLICY PERIOD",
+    "Policy Year": "POLICY PERIOD",
+    "Insurer Loss Run": "CARRIER",
+    "Insured": "RNC Industries LLC"
+  },
+  "absent_columns": [
+    "Description",
+    "Report Date",
+    "Loss State",
+    "Occurrence ID",
+    "Recovery Salvage Subro Reins",
+    "Recovery Deductible",
+    "Claim Total",
+    "Policy Number"
+  ],
+  "policy_number_placement": "document_header",
+  "row_granularity": "one row represents an individual claim",
+  "date_format": "DD-MMM-YY",
+  "currency_format": "$1,000,000.00",
+  "table_starts_on_page": 2,
+  "document_values": {
+    "Insured": "RNC Industries LLC",
+    "Valuation Date": "7/15/2022"
+  },
+  "notes": "The summary table appears on page 1, followed by detailed claim tables beginning on page 2. Claim table headers repeat on continuation pages. The detailed table continues across pages 3 and 4, with another section repeating the policy-period and claim headers on page 5. Status values are printed as C or O. Close Date contains both printed dates and unformatted numeric date serials such as 43438, 43769, 44413, 44439, and 44588. Policy periods are shown as date ranges under POLICY PERIOD; no Policy Number is shown."
+}

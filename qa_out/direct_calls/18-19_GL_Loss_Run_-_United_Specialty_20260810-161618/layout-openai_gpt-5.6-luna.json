@@ -1,0 +1,41 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim #",
+    "Claimant Name": "Claimant",
+    "Description": "Description of Accident",
+    "Claim Status": "Claim Status",
+    "Accident Date": "Date of Loss",
+    "Report Date": "Date Open",
+    "Closed Date": "Date Closed",
+    "Loss State": "Accident State",
+    "Policy Number": "Policy Number",
+    "Indemnity Paid": "Loss Paid",
+    "Indemnity Reserve": "Current Loss Resv",
+    "Expense Paid": "Exp Paid",
+    "Expense Reserved": "Current Exp Resv",
+    "Recovery Salvage Subro Reins": "Salvage Recover, Subro Recover",
+    "Recovery Deductible": "Deduct Recover",
+    "Claim Total": "Gross Incurred",
+    "Valuation Date": "Claims Activity as of",
+    "Line of Business": "Line/Cov",
+    "Policy Effective Date": "Policy Period",
+    "Policy Expiration Date": "Policy Period",
+    "Policy Year": "Policy Period",
+    "Insurer Loss Run": "Carrier Name",
+    "Policy Total": "SUB TOTALS for Policy Period",
+    "Insured": "Name of Insured"
+  },
+  "absent_columns": [
+    "Occurrence ID"
+  ],
+  "policy_number_placement": "document_header",
+  "row_granularity": "One row per claim, with claimant and line/coverage details",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "$0.00",
+  "table_starts_on_page": 1,
+  "document_values": {
+    "Insured": "CONCEPTUAL MANAGEMENT, INC.",
+    "Valuation Date": "09/18/2022"
+  },
+  "notes": "The claim detail table follows the Policy Period header and uses claim-level labels above the financial columns. A policy-period subtotal and grand-total section follows the claim row. The report date appears as Date Open, while the valuation date is printed in the footer as Claims Activity as of 09/18/2022. Policy Number appears in the document header and is not a repeating claim-table column."
+}

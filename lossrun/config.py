@@ -19,6 +19,10 @@ class ApiConfig:
     request_timeout_s: float
     max_concurrent_calls: int
     max_retries: int
+    # How many documents a batch (`lossrun extract a.pdf b.pdf ...`) runs at
+    # once. Independent of `max_concurrent_calls`, which caps concurrent calls
+    # *within* one document's QA stage.
+    max_concurrent_documents: int = 3
 
 
 @dataclass(frozen=True)
@@ -138,7 +142,7 @@ class Config:
         """
         override = self.model_overrides.get(model, {})
         allowed = {f.name for f in ChunkingConfig.__dataclass_fields__.values()}
-        unknown = set(override) - allowed - {"effort", "provider", "api_model"}
+        unknown = set(override) - allowed - {"effort", "layout_effort", "provider", "api_model"}
         if unknown:
             raise ValueError(f"unknown override keys for {model}: {sorted(unknown)}")
 
@@ -166,6 +170,22 @@ class Config:
         if override is not None:
             return _effort(override)
         return self.reasoning.extract
+
+    def layout_effort_for(self, model: str) -> str | None:
+        """Layout-discovery effort for one model.
+
+        Separate from `extract_effort_for` rather than shared with it: the two
+        stages have different global defaults (`reasoning.layout` vs
+        `reasoning.extract`), and a model with no override should keep its own
+        stage's default rather than inheriting the other stage's. The same
+        per-model `effort` override is not reused here for the same reason
+        `extract_effort_for` documents — `max`/`xhigh` are OpenAI-only, so
+        raising layout effort for one model cannot be a global setting.
+        """
+        override = self.model_overrides.get(model, {}).get("layout_effort")
+        if override is not None:
+            return _effort(override)
+        return self.reasoning.layout
 
     def provider_for(self, model: str) -> str:
         """Which client reaches this model: "superapp", "openai" or "gemini".
@@ -305,6 +325,7 @@ def load_config(
         request_timeout_s=float(api_raw.get("request_timeout_s", 120)),
         max_concurrent_calls=int(api_raw.get("max_concurrent_calls", 4)),
         max_retries=int(api_raw.get("max_retries", 2)),
+        max_concurrent_documents=int(api_raw.get("max_concurrent_documents", 3)),
     )
 
     chunk_raw = raw.get("chunking", {})

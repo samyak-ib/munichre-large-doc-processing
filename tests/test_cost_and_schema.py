@@ -160,7 +160,7 @@ def test_an_invalid_effort_is_rejected_locally():
         _effort("maximum")
 
 
-def _config_with(overrides, *, extract=None, forced=None):
+def _config_with(overrides, *, extract=None, forced=None, layout="medium"):
     from lossrun.config import ApiConfig, ChunkingConfig, Config, ReasoningConfig
 
     return Config(
@@ -169,7 +169,7 @@ def _config_with(overrides, *, extract=None, forced=None):
         chunking=ChunkingConfig(50, 2, 5, 12, 1, 3),
         model_overrides=overrides,
         pricing={},
-        reasoning=ReasoningConfig(extract=extract),
+        reasoning=ReasoningConfig(extract=extract, layout=layout),
         token="t",
         forced_extract_effort=forced,
     )
@@ -218,3 +218,50 @@ def test_an_invalid_per_model_effort_is_rejected():
     config = _config_with({"openai/gpt-5.6-luna": {"effort": "maximum"}})
     with pytest.raises(ValueError, match="not one of"):
         config.extract_effort_for("openai/gpt-5.6-luna")
+
+
+def test_the_shipped_config_puts_max_layout_effort_on_an_openai_pin_only():
+    """Mirrors the extract-effort guard: max/xhigh are OpenAI-only, so Luna's
+    layout_effort override must not have widened to a Gemini pin."""
+    from lossrun.config import VALID_EFFORTS, load_config
+
+    config = load_config(require_token=False)
+    for model in config.routed_models:
+        effort = config.layout_effort_for(model)
+        if effort in {"xhigh", "max"}:
+            assert model.startswith("openai/"), f"{effort} is OpenAI-only, not valid for {model}"
+        assert effort is None or effort in VALID_EFFORTS
+
+
+def test_layout_effort_can_be_set_on_one_model_only():
+    config = _config_with({"openai/gpt-5.6-luna": {"layout_effort": "max"}})
+    assert config.layout_effort_for("openai/gpt-5.6-luna") == "max"
+    assert config.layout_effort_for("gemini/gemini-3.6-flash") == "medium"
+
+
+def test_a_model_without_a_layout_override_uses_the_layout_default():
+    config = _config_with({"openai/gpt-5.6-luna": {"layout_effort": "max"}}, layout="low")
+    assert config.layout_effort_for("gemini/gemini-3.6-flash") == "low"
+
+
+def test_layout_effort_is_independent_of_extract_effort():
+    """A model with an extract-effort override but no layout_effort override
+    keeps the layout stage's own default rather than inheriting extract's."""
+    config = _config_with({"openai/gpt-5.6-luna": {"effort": "max"}}, extract="low", layout="medium")
+    assert config.extract_effort_for("openai/gpt-5.6-luna") == "max"
+    assert config.layout_effort_for("openai/gpt-5.6-luna") == "medium"
+
+
+def test_an_invalid_per_model_layout_effort_is_rejected():
+    config = _config_with({"openai/gpt-5.6-luna": {"layout_effort": "maximum"}})
+    with pytest.raises(ValueError, match="not one of"):
+        config.layout_effort_for("openai/gpt-5.6-luna")
+
+
+def test_layout_effort_override_does_not_leak_into_chunking():
+    config = _config_with(
+        {"openai/gpt-5.6-luna": {"layout_effort": "max", "max_pages_per_chunk": 40}}
+    )
+    chunking = config.chunking_for("openai/gpt-5.6-luna")
+    assert chunking.max_pages_per_chunk == 40
+    assert not hasattr(chunking, "layout_effort")

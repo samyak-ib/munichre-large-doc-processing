@@ -1,0 +1,42 @@
+{
+  "present_columns": {
+    "Claim Number": "Claim #:",
+    "Claimant Name": "Claimant",
+    "Description": "Case Description:",
+    "Claim Status": "Status",
+    "Accident Date": "Occurrence Date:",
+    "Report Date": "Reported Date:",
+    "Loss State": "Accident State:",
+    "Policy Number": "Policy #",
+    "Indemnity Paid": "Paid",
+    "Indemnity Reserve": "Reserve",
+    "Expense Paid": "Paid",
+    "Expense Reserved": "Reserve",
+    "Recovery Salvage Subro Reins": "All Other",
+    "Recovery Deductible": "Deductible",
+    "Claim Total": "Incurred",
+    "Valuation Date": "As of Date:",
+    "Policy Effective Date": "Policy Effective Date:",
+    "Policy Expiration Date": "Policy Expiration Date:",
+    "Insurer Loss Run": "Company:",
+    "Policy Total": "Policy Totals",
+    "Insured": "Claims Listing for:"
+  },
+  "absent_columns": [
+    "Closed Date",
+    "Occurrence ID",
+    "Line of Business",
+    "Policy Year"
+  ],
+  "policy_number_placement": "block_header",
+  "row_granularity": "one claimant row within a claim block; each claim block can contain multiple claimant rows",
+  "date_format": "MM/DD/YYYY",
+  "currency_format": "0.00 (no currency symbol)",
+  "table_starts_on_page": 2,
+  "document_values": {
+    "Insured": "Leonard Roofing Inc",
+    "Valuation Date": "09/06/2022"
+  },
+  "reported_row_count": 7,
+  "notes": "The detail is organized as policy blocks, followed by multi-line claim headers and claimant tables. Claim-level fields appear above the claimant rows and must be carried to each row; claimant table headers repeat for each claim. The two Paid and two Reserve columns are distinguished by the Indemnity/Loss and Expense group headers. Recoveries contains Deductible and All Other. Claim Totals, Policy Totals, and Account Totals are subtotal rows, not claim rows. The summaries report 5 claim blocks, while the detail contains 7 claimant data rows. No closed date is shown even where Status is Closed."
+}
