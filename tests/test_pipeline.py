@@ -143,6 +143,7 @@ class FakeClient:
                         "Insured": "ACME LOGISTICS INC",
                         "Valuation Date": "01/15/2026",
                     },
+                    "reported_row_count": self.behaviour.get("reported_row_count"),
                 }
             )
         if stage == "qa":
@@ -327,6 +328,16 @@ def _issue_categories(workbook_path) -> set[str]:
     header = [c.value for c in sheet[1]]
     index = header.index("category")
     return {row[index] for row in sheet.iter_rows(min_row=2, values_only=True)}
+
+
+def _issue_details(workbook_path, category: str) -> str:
+    sheet = load_workbook(workbook_path)["Issues"]
+    header = [c.value for c in sheet[1]]
+    category_index, detail_index = header.index("category"), header.index("detail")
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        if row[category_index] == category:
+            return row[detail_index]
+    raise AssertionError(f"no issue with category {category!r}")
 
 
 def test_a_chunk_that_parses_to_nothing_saves_its_raw_response(tmp_path, stub_client, monkeypatch):
@@ -548,6 +559,66 @@ def test_a_row_the_review_found_on_the_page_is_flagged_not_added(tmp_path, stub_
 
     assert outcome.rows == len(CLAIMS), "a reported row is never added to the table"
     assert "qa_row_missing" in _issue_categories(outcome.workbook)
+
+
+def test_a_matching_row_count_raises_no_issue(tmp_path, stub_client):
+    stub_client(reported_row_count=len(CLAIMS))
+    pdf = tmp_path / "loss_run.pdf"
+    write_loss_run(pdf, pages=2)
+
+    outcome = pipeline.run_document(
+        pdf, config=make_config(tmp_path), out_dir=tmp_path / "out", log=lambda *_: None
+    )
+
+    assert "qa_row_count_mismatch" not in _issue_categories(outcome.workbook)
+
+
+def test_no_reported_row_count_raises_no_issue(tmp_path, stub_client):
+    """Layout discovery is told to return null rather than guess on a longer
+    document — that must not itself read as a mismatch."""
+    stub_client()
+    pdf = tmp_path / "loss_run.pdf"
+    write_loss_run(pdf, pages=2)
+
+    outcome = pipeline.run_document(
+        pdf, config=make_config(tmp_path), out_dir=tmp_path / "out", log=lambda *_: None
+    )
+
+    assert "qa_row_count_mismatch" not in _issue_categories(outcome.workbook)
+
+
+def test_a_row_count_mismatch_is_flagged(tmp_path, stub_client):
+    stub_client(reported_row_count=len(CLAIMS) + 3)
+    pdf = tmp_path / "loss_run.pdf"
+    write_loss_run(pdf, pages=2)
+
+    outcome = pipeline.run_document(
+        pdf, config=make_config(tmp_path), out_dir=tmp_path / "out", log=lambda *_: None
+    )
+
+    assert "qa_row_count_mismatch" in _issue_categories(outcome.workbook)
+
+
+def test_a_row_count_gap_cites_rows_the_review_already_flagged_missing(tmp_path, stub_client):
+    """The cheap cross-check: rows the per-chunk QA review already named as
+    missing should explain the gap rather than reading as unaccounted for."""
+    stub_client(
+        reported_row_count=len(CLAIMS) + 1,
+        qa_payload={
+            "findings": [],
+            "missing_rows": [{"row": ["P-300", "C009", "Unseen Claimant"], "reason": "on page 2"}],
+        },
+    )
+    pdf = tmp_path / "loss_run.pdf"
+    write_loss_run(pdf, pages=2)
+
+    outcome = pipeline.run_document(
+        pdf, config=make_config(tmp_path), out_dir=tmp_path / "out", log=lambda *_: None
+    )
+
+    detail = _issue_details(outcome.workbook, "qa_row_count_mismatch")
+    assert "c009" in detail, "row keys are normalized, matching qa_row_missing's own display"
+    assert "unaccounted" not in detail
 
 
 def test_each_chunks_rows_are_reviewed_against_that_chunks_pages(tmp_path, stub_client):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -18,6 +19,20 @@ HEADER_FILL = PatternFill("solid", fgColor="1F3864")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 MAX_COLUMN_WIDTH = 60
 ISSUE_COLUMNS = ("severity", "category", "detail", "row_key", "column", "value", "source")
+
+# XML 1.0 forbids these outright (tab/LF/CR are fine): C0 control characters,
+# lone UTF-16 surrogates (an OCR/decoding artifact — a real surrogate PAIR
+# encodes a valid character and never hits this), and the two noncharacters.
+# openpyxl's own save path doesn't check for the latter two, but its lxml
+# backend does and raises past that point, so this must be broader than
+# openpyxl's own ILLEGAL_CHARACTERS_RE.
+_ILLEGAL_XML_CHARS_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff￾￿]")
+
+
+def _sanitize(value: Any) -> Any:
+    if isinstance(value, str):
+        return _ILLEGAL_XML_CHARS_RE.sub("", value)
+    return value
 
 
 def write_workbook(
@@ -88,6 +103,9 @@ def write_workbook(
     workbook.save(path)
 
 
+_LEDGER_LOCK = threading.Lock()
+
+
 def append_ledger(
     path: Path,
     summary: dict[str, Any],
@@ -95,7 +113,22 @@ def append_ledger(
     accuracy: Sequence[dict[str, Any]] = (),
     column_scores: Sequence[dict[str, Any]] = (),
 ) -> None:
-    """Append this run to the cross-run ledger, creating it on first use."""
+    """Append this run to the cross-run ledger, creating it on first use.
+
+    Locked because a parallel batch calls this once per document, concurrently,
+    against the same file — the load-modify-save below is not safe otherwise.
+    """
+    with _LEDGER_LOCK:
+        _append_ledger_locked(path, summary, calls, accuracy, column_scores)
+
+
+def _append_ledger_locked(
+    path: Path,
+    summary: dict[str, Any],
+    calls: Sequence[CallRecord],
+    accuracy: Sequence[dict[str, Any]],
+    column_scores: Sequence[dict[str, Any]],
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         workbook = load_workbook(path)
@@ -264,7 +297,7 @@ def _write_sheet(
     _write_header(sheet, header, row=start_row)
     for offset, row in enumerate(rows, start=start_row + 1):
         for col, value in enumerate(row, start=1):
-            sheet.cell(row=offset, column=col, value=value)
+            sheet.cell(row=offset, column=col, value=_sanitize(value))
     sheet.freeze_panes = sheet.cell(row=start_row + 1, column=1)
     _autosize(sheet)
 

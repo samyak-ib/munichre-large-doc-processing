@@ -97,6 +97,55 @@ def test_a_document_with_no_run_row_gets_blank_telemetry_not_a_crash(tmp_path):
     assert row["cost_total_usd"] == ""
 
 
+def test_document_rows_reports_the_source_files_size(tmp_path):
+    golden_path = make_golden(tmp_path, "doc.pdf")
+    source_dir = tmp_path / "samples"
+    source_dir.mkdir()
+    (source_dir / "doc.pdf").write_bytes(b"x" * 2048)
+    results = BatchResults(
+        batch_id="b1",
+        records=[make_record("doc.pdf")],
+        schema=SCHEMA,
+        golden_path=golden_path,
+        source_dirs=[source_dir],
+    )
+    assert results.document_rows()[0]["file_size_kb"] == 2.0
+
+
+def test_source_dir_search_is_recursive_and_case_insensitive(tmp_path):
+    golden_path = make_golden(tmp_path, "Doc.PDF")
+    source_dir = tmp_path / "samples"
+    nested = source_dir / "Loss Runs"
+    nested.mkdir(parents=True)
+    (nested / "doc.pdf").write_bytes(b"x" * 1024)
+    results = BatchResults(
+        batch_id="b1",
+        records=[make_record("Doc.PDF")],
+        schema=SCHEMA,
+        golden_path=golden_path,
+        source_dirs=[source_dir],
+    )
+    assert results.document_rows()[0]["file_size_kb"] == 1.0
+
+
+def test_file_size_is_blank_without_a_source_dir_or_a_match(tmp_path):
+    golden_path = make_golden(tmp_path, "doc.pdf")
+    results = BatchResults(
+        batch_id="b1", records=[make_record("doc.pdf")], schema=SCHEMA, golden_path=golden_path
+    )
+    assert results.document_rows()[0]["file_size_kb"] == ""
+
+    missing_dir = tmp_path / "does-not-exist"
+    results = BatchResults(
+        batch_id="b1",
+        records=[make_record("doc.pdf")],
+        schema=SCHEMA,
+        golden_path=golden_path,
+        source_dirs=[missing_dir],
+    )
+    assert results.document_rows()[0]["file_size_kb"] == ""
+
+
 def call_row(document: str, stage: str, latency_s: float) -> list:
     values = {c: "" for c in CALL_COLUMNS}
     values.update(document=document, stage=stage, latency_s=latency_s)

@@ -55,6 +55,20 @@ class Layout:
     def policy_number_placement(self) -> str:
         return str(self.data.get("policy_number_placement", "column"))
 
+    @property
+    def reported_row_count(self) -> int | None:
+        """The row count layout discovery stated, or None if it didn't.
+
+        The model is told to return null rather than guess when it was only
+        shown the opening pages of a longer document, so this is commonly
+        absent — a QA-time comparison against it should treat None as "no
+        expectation to check against," not as zero rows.
+        """
+        value = self.data.get("reported_row_count")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return int(value) if value >= 0 else None
+
 
 def profile_pdf(path: Path, cfg: ChunkingConfig) -> DocProfile:
     """Page count, text-layer coverage, and the single-shot/chunked decision."""
@@ -105,7 +119,11 @@ def discover_layout(
         model=model,
         instructions=layout_instructions(schema),
         prompt=layout_prompt(
-            header_pages, profile.pages, context_text, document_label=schema.document_label
+            header_pages,
+            profile.pages,
+            context_text,
+            document_label=schema.document_label,
+            row_label=schema.row_label,
         ),
         attachments=[Attachment(filename=f"{path.stem}-header.pdf", data=data)],
         stage="layout",

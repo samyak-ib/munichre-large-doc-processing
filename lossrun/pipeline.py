@@ -322,7 +322,63 @@ def _run_qa(
             "document — every one is reported rather than applied"
         )
     _collect_qa_issues(result, issues)
+    _check_row_count(run, result, issues, log)
     return result
+
+
+def _check_row_count(
+    run: ModelRun, result: QAResult, issues: list[dict[str, Any]], log
+) -> None:
+    """Compare layout discovery's reported row count against the final table.
+
+    Layout discovery only reads a document's opening pages, so its count is a
+    best-effort statement, not ground truth — a mismatch is reported as an
+    issue rather than failing the run. When the table is short, the QA
+    reviewer's own per-chunk "missing rows" findings (already collected above,
+    at no extra cost) often already name exactly which claims account for the
+    gap, so those are checked first before calling anything unexplained.
+    """
+    if run.layout is None:
+        return
+    expected = run.layout.reported_row_count
+    if expected is None:
+        return
+    actual = len(run.rows)
+    if expected == actual:
+        return
+
+    gap = expected - actual
+    if gap > 0:
+        explained = result.missing[:gap]
+        detail = (
+            f"layout discovery reported {expected} row(s); the final table "
+            f"holds {actual} ({gap} short)."
+        )
+        if explained:
+            keys = "; ".join(" | ".join(m.key) for m in explained)
+            detail += (
+                f" {len(explained)} of the gap match rows the QA review already "
+                f"flagged as missing: {keys}."
+            )
+        unexplained = gap - len(explained)
+        if unexplained:
+            detail += f" {unexplained} row(s) remain unaccounted for."
+    else:
+        detail = (
+            f"layout discovery reported {expected} row(s); the final table "
+            f"holds {actual} ({-gap} more than expected) — check for a "
+            "duplicate that should have merged, or an over-broad row count."
+        )
+
+    log(f"  qa: row count check: {detail}")
+    issues.append(
+        {
+            "severity": "warning",
+            "category": "qa_row_count_mismatch",
+            "detail": detail,
+            "source": "layout vs final table",
+        }
+    )
 
 
 def _run_model(
@@ -364,7 +420,7 @@ def _run_model(
             profile=run.profile,
             cfg=chunk_cfg,
             context_text=context_text,
-            effort=config.reasoning.layout,
+            effort=config.layout_effort_for(model),
         )
         run.result = extract_pdf(
             client,

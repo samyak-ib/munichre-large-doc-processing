@@ -159,6 +159,11 @@ Return one JSON object and nothing else:
   "currency_format": "<how amounts are written, e.g. $1,234.56 or (1,234.56) for negatives>",
   "table_starts_on_page": <1-based page number where the {schema.row_label} table begins>,
   "document_values": {{{doc_values_example}}},
+  "reported_row_count": <the total number of {schema.row_label} rows this
+            {schema.document_label} contains, only if you can state it with
+            confidence — either these pages are the whole document and you
+            counted them directly, or a summary/total line on these pages
+            states the count explicitly. null otherwise; never guess>,
   "notes": "<anything a later reader of continuation pages would need, such as a
             repeating header, a subtotal row pattern, or a two-line row layout>"}}
 
@@ -176,12 +181,25 @@ def layout_prompt(
     total_pages: int,
     context_text: str = "",
     document_label: str = "insurance loss-run report",
+    row_label: str = "claim",
 ) -> str:
     prompt = (
         f"The attached PDF is the first {page_count} page(s) of a "
         f"{total_pages}-page {document_label}. Map its structure and return the "
         f"JSON object described in the instructions."
     )
+    if page_count >= total_pages:
+        prompt += (
+            f"\n\nThese pages are the complete document, so you can count its "
+            f"{row_label} rows directly for `reported_row_count`."
+        )
+    else:
+        prompt += (
+            "\n\nThese are only the opening pages of a longer document. Set "
+            "`reported_row_count` only if a summary or total line on these pages "
+            "states the count explicitly — otherwise return null rather than "
+            "guessing from what little you can see."
+        )
     if context_text.strip():
         prompt += (
             "\n\nThe document arrived by email. Use this only for the "

@@ -96,6 +96,7 @@ ledgers.
 | `--provider NAME` | Force one route — `auto`, `superapp`, `openai`, `gemini` — ignoring per-model overrides |
 | `--no-qa` | Ship the extracted table unreviewed, skipping the QA pass |
 | `--results-out DIR` | Where the batch report goes (default `initial_results/`) |
+| `--concurrency N` | How many documents to run at once in a multi-document batch (config default: 3) |
 
 ## Models
 
@@ -207,9 +208,9 @@ Check these in order:
 uv run python -m pytest
 ```
 
-Covers page windowing, JSON repair on truncated output, row mapping, merge and
-conflict classification, the QA guard, cost arithmetic, and the full pipeline
-against a synthetic loss run with the API stubbed out.
+Covers page windowing, JSON repair on truncated output, row mapping,
+whole-row merge, the QA guard, cost arithmetic, and the full pipeline against
+a synthetic loss run with the API stubbed out.
 
 > Use `python -m pytest`, not `uv run pytest`. The `.venv/bin/pytest` console
 > script in this checkout carries another project's interpreter path, so it runs

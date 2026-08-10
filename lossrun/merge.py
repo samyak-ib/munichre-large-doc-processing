@@ -1,8 +1,15 @@
-"""Row-key merge across chunks, plus value normalization.
+"""Whole-row merge across chunks, plus value normalization.
 
-Chunks overlap, so the same claim can arrive twice. Merging is keyed on
-(Policy Number, Claim Number, Claimant Name) — the same primary key used to match
-against golden data. Disagreements are recorded, never silently resolved.
+Chunks overlap, so the same claim can arrive twice. A fixed key — e.g.
+(Policy Number, Claim Number, Claimant Name), the loss run's primary key for
+matching against golden data — is not reliable for deciding this: a document
+that prints no claim number and no claimant collapses every distinct claim
+onto the same key, and two genuinely distinct claims can share it even when
+those columns are present. So merging instead looks at the whole row: two
+rows are the same claim if no column states two different things, treating a
+blank cell as "unknown" rather than as a disagreement. A blank filled in by
+the other row is not a disagreement; a real one (both sides state a value,
+and it differs) means the rows are kept separate rather than merged.
 """
 
 from __future__ import annotations
@@ -19,20 +26,11 @@ _WS_RE = re.compile(r"\s+")
 
 
 @dataclass
-class Conflict:
-    key: tuple[str, ...]
-    column: str
-    kept: str
-    discarded: str
-    kept_from: str
-    discarded_from: str
-
-
-@dataclass
 class MergeResult:
     rows: list[dict[str, str]] = field(default_factory=list)
-    conflicts: list[Conflict] = field(default_factory=list)
-    duplicate_keys: int = 0
+    # How many raw rows were folded into an already-accumulated row, rather
+    # than kept as their own distinct row.
+    rows_merged: int = 0
 
     def by_key(self, key_columns: tuple[str, ...] = KEY_COLUMNS) -> dict[tuple[str, ...], dict[str, str]]:
         return {normalize_key(r, key_columns): r for r in self.rows}
@@ -65,43 +63,58 @@ def _key_part(value: str) -> str:
 
 
 def merge_rows(raw_rows: list[RawRow], schema: TableSchema) -> MergeResult:
-    """Collapse rows sharing a key, keeping the first non-empty value per cell."""
+    """Collapse rows that read as the same claim, keeping the first non-empty value per cell.
+
+    Two rows are the same claim if `_consistent` finds no column where they
+    state two different things — not if they share a fixed key. See the
+    module docstring for why a fixed key is neither necessary nor sufficient
+    for row identity.
+    """
     result = MergeResult()
-    merged: dict[tuple[str, ...], dict[str, str]] = {}
-    provenance: dict[tuple[str, ...], dict[str, str]] = {}
-    order: list[tuple[str, ...]] = []
+    columns = tuple(c.name for c in schema.row_columns)
+    identifier_columns = set(schema.identifier_columns)
+    merged: list[dict[str, str]] = []
 
     for raw in raw_rows:
-        key = normalize_key(raw.values, schema.key_columns)
-        source = f"{raw.model} {raw.chunk}"
-        if key not in merged:
-            merged[key] = dict(raw.values)
-            provenance[key] = {c: source for c in raw.values}
-            order.append(key)
+        target = next(
+            (existing for existing in merged if _consistent(existing, raw.values, columns, identifier_columns)),
+            None,
+        )
+        if target is None:
+            merged.append(dict(raw.values))
             continue
 
-        result.duplicate_keys += 1
-        target = merged[key]
-        for column, value in raw.values.items():
-            existing = target.get(column)
-            if is_empty(existing):
+        result.rows_merged += 1
+        for column in columns:
+            value = raw.values.get(column, "")
+            if is_empty(target.get(column)) and not is_empty(value):
                 target[column] = value
-                provenance[key][column] = source
-            elif not is_empty(value) and _differs(existing, value):
-                result.conflicts.append(
-                    Conflict(
-                        key=key,
-                        column=column,
-                        kept=existing,
-                        discarded=value,
-                        kept_from=provenance[key].get(column, ""),
-                        discarded_from=source,
-                    )
-                )
 
-    for key in order:
-        result.rows.append(merged[key])
+    result.rows = merged
     return result
+
+
+def _consistent(
+    a: dict[str, str], b: dict[str, str], columns: tuple[str, ...], identifier_columns: set[str]
+) -> bool:
+    """Whether `a` and `b` could be the same claim: no column states two different things.
+
+    A blank on either side is "unknown", not a disagreement. Identifier
+    columns (the row's key, plus anything else flagged `identifier`) compare
+    with `_key_part`'s full whitespace strip, so a line-wrapped identifier
+    still matches itself; every other column compares with `_differs`'s
+    looser whitespace collapse, so free text keeps its meaningful spacing.
+    """
+    for column in columns:
+        av, bv = a.get(column, ""), b.get(column, "")
+        if is_empty(av) or is_empty(bv):
+            continue
+        if column in identifier_columns:
+            if _key_part(av) != _key_part(bv):
+                return False
+        elif _differs(av, bv):
+            return False
+    return True
 
 
 def _differs(a: str, b: str) -> bool:

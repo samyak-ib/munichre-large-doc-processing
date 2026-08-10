@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import compare
@@ -86,6 +87,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="ship the extracted table unreviewed, skipping the QA pass",
     )
+    extract.add_argument(
+        "--concurrency",
+        type=int,
+        help="how many documents to run at once in a multi-document batch "
+        "(config default: 3). Raise gradually and watch for 408/429s — this "
+        "is per-document parallelism, separate from api.max_concurrent_calls",
+    )
 
     check = sub.add_parser("check", help="verify credentials and API reachability")
     check.add_argument("--config", type=Path, help="path to config.yaml")
@@ -155,6 +163,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--batch",
         help="comma-separated batch ids to pull telemetry for; inferred from the "
         "run directories when omitted",
+    )
+    results_cmd.add_argument(
+        "--source-dir",
+        type=Path,
+        action="append",
+        help="directory to search (recursively) for each document's original "
+        "file, to report its size; repeatable. A run directory keeps no copy "
+        "of the source, so without this the file_size_kb column is blank",
     )
 
     compare_cmd = sub.add_parser(
@@ -304,6 +320,7 @@ def _cmd_results(args: argparse.Namespace) -> int:
             ledger_rows=ledger_rows,
             call_rows=call_rows,
             run_rows=run_rows,
+            source_dirs=args.source_dir or (),
         ),
         args.out,
         version=args.version,
@@ -404,7 +421,7 @@ def _cmd_extract(args: argparse.Namespace) -> int:
     model = config.primary_model
     print(f"model: {model}")
     print(
-        f"effort: layout={config.reasoning.layout or 'default'}  "
+        f"effort: layout={config.layout_effort_for(model) or 'default'}  "
         f"extract={config.extract_effort_for(model) or 'default'}"
     )
     routes = ", ".join(
@@ -424,48 +441,70 @@ def _cmd_extract(args: argparse.Namespace) -> int:
     results_name = batch_filename()
     completed: list[Path] = []
 
+    concurrency = max(1, args.concurrency or config.api.max_concurrent_documents)
+    print(f"concurrency: {concurrency}")
+
     failures = 0
-    for path in paths:
-        print(f"\n{path.name}")
-        try:
-            outcome = run_document(
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = {
+            pool.submit(
+                run_document,
                 path,
                 config=config,
                 out_dir=args.out,
                 schema_path=args.schema,
                 golden_path=args.golden,
                 batch_id=batch_id,
-                log=print,
-            )
-        except (SuperAppError, ValueError, RuntimeError) as exc:
-            failures += 1
-            print(f"  failed: {exc}", file=sys.stderr)
-            continue
+                log=_prefixed_log(path.name),
+            ): path
+            for path in paths
+        }
+        # Only this thread ever touches `completed`/`failures`/`_publish` below —
+        # the pool's workers do nothing but `run_document`, so none of that
+        # needs its own lock. `run_document` itself writes to the shared
+        # per-route ledger (`report.append_ledger`), which does need one; see
+        # its own lock there.
+        for future in as_completed(futures):
+            path = futures[future]
+            print(f"\n{path.name}")
+            try:
+                outcome = future.result()
+            except (SuperAppError, ValueError, RuntimeError) as exc:
+                failures += 1
+                print(f"  failed: {exc}", file=sys.stderr)
+                continue
 
-        print(
-            f"  done: {outcome.rows} rows  route={outcome.route}  chunks={outcome.chunks}  "
-            f"qa_findings={outcome.qa_findings}  qa_applied={outcome.qa_applied}  "
-            f"unverified_keys={outcome.unverified}  cost=${outcome.cost_usd:.4f}"
-        )
-        if outcome.accuracy:
-            a = outcome.accuracy
             print(
-                f"  ACCURACY ({a.model}): {a.cell_accuracy:.1f}% cells  "
-                f"{a.exact_row_rate:.1f}% rows fully correct  "
-                f"recall {a.row_recall:.1f}%  precision {a.row_precision:.1f}%"
+                f"  done: {outcome.rows} rows  route={outcome.route}  chunks={outcome.chunks}  "
+                f"qa_findings={outcome.qa_findings}  qa_applied={outcome.qa_applied}  "
+                f"unverified_keys={outcome.unverified}  cost=${outcome.cost_usd:.4f}"
             )
-        print(f"  wrote  {outcome.run_dir}/")
-        print(f"  ledger {outcome.ledger}")
+            if outcome.accuracy:
+                a = outcome.accuracy
+                print(
+                    f"  ACCURACY ({a.model}): {a.cell_accuracy:.1f}% cells  "
+                    f"{a.exact_row_rate:.1f}% rows fully correct  "
+                    f"recall {a.row_recall:.1f}%  precision {a.row_precision:.1f}%"
+                )
+            print(f"  wrote  {outcome.run_dir}/")
+            print(f"  ledger {outcome.ledger}")
 
-        completed.append(outcome.run_dir)
-        if args.results_out:
-            published = _publish(
-                completed, batch_id, args, results_name, outcome.ledger
-            )
-            if published:
-                print(f"  results {published}")
+            completed.append(outcome.run_dir)
+            if args.results_out:
+                published = _publish(
+                    completed, batch_id, args, results_name, outcome.ledger
+                )
+                if published:
+                    print(f"  results {published}")
 
     return 1 if failures else 0
+
+
+def _prefixed_log(name: str):
+    """A `log` callback for `run_document` that tags every line with its
+    document, since concurrent documents' progress lines interleave on the
+    console otherwise."""
+    return lambda message: print(f"[{name}]{message}")
 
 
 def _publish(

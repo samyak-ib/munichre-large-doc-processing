@@ -42,6 +42,7 @@ INFLUENCE_COLUMNS = (
 
 DOCUMENT_COLUMNS = (
     "document",
+    "file_size_kb",
     "pages",
     "model",
     "rows_golden",
@@ -172,10 +173,16 @@ class BatchResults:
     # The ledger's `Runs` sheet for this batch: one row per document, already
     # carrying per-page token rates and per-document cost from `Telemetry.summary`.
     run_rows: Sequence[dict[str, Any]] = ()
+    # Directories to search (recursively) for each document's original file,
+    # to report its size. A run directory keeps no copy of the source PDF, so
+    # this is the only way to recover it after the fact; not finding a match
+    # just leaves the cell blank rather than failing the report.
+    source_dirs: Sequence[Path] = ()
 
     def document_rows(self) -> list[dict[str, Any]]:
         telemetry_by_document = {row.get("document"): row for row in self.run_rows}
         stage_time_by_document = _stage_seconds_by_document(self.call_rows)
+        source_files = _index_source_files(self.source_dirs)
         rows = []
         for record in self.records:
             golden = load_golden(self.golden_path, record.document, self.schema)
@@ -183,10 +190,12 @@ class BatchResults:
                 continue
             telemetry = telemetry_by_document.get(record.document, {})
             stage_time = stage_time_by_document.get(record.document, {})
+            file_size_kb = _file_size_kb(record.document, source_files)
             for model, result in record.score_all(golden, self.schema, DEFAULT_POLICY).items():
                 rows.append(
                     {
                         "document": record.document,
+                        "file_size_kb": file_size_kb,
                         "pages": record.pages,
                         "model": model,
                         "rows_golden": result.rows_golden,
@@ -302,6 +311,29 @@ def _stage_seconds_by_document(
         bucket = totals.setdefault(document, {})
         bucket[stage] = bucket.get(stage, 0.0) + _as_float(call.get("latency_s"))
     return totals
+
+
+def _index_source_files(source_dirs: Sequence[Path]) -> dict[str, Path]:
+    """Every file under `source_dirs`, keyed by name — and by lowercased name,
+    for a document whose case drifted between the source folder and the run."""
+    index: dict[str, Path] = {}
+    for root in source_dirs:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file():
+                index.setdefault(path.name, path)
+                index.setdefault(path.name.lower(), path)
+    return index
+
+
+def _file_size_kb(document: str, source_files: dict[str, Path]) -> float | str:
+    """The original file's size in KiB, or "" when no source directory was
+    given or none of them held a file matching this document's name."""
+    path = source_files.get(document) or source_files.get(document.lower())
+    if path is None:
+        return ""
+    return round(path.stat().st_size / 1024, 1)
 
 
 def write_results(

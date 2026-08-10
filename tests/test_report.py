@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from openpyxl import Workbook
+from concurrent.futures import ThreadPoolExecutor
 
-from lossrun.report import read_batch_telemetry
+from openpyxl import Workbook, load_workbook
+
+from lossrun.report import append_ledger, read_batch_telemetry, write_workbook
 from lossrun.telemetry import CALL_COLUMNS, SUMMARY_COLUMNS
 
 
@@ -78,3 +80,51 @@ def test_no_matching_batch_returns_empty_everything(tmp_path):
 def test_a_missing_ledger_file_returns_empty_everything(tmp_path):
     accuracy, calls, runs = read_batch_telemetry(tmp_path / "nope.xlsx", "b1")
     assert (accuracy, calls, runs) == ([], [], [])
+
+
+def test_append_ledger_is_safe_under_concurrent_writers(tmp_path):
+    """A parallel batch calls `append_ledger` once per document, concurrently,
+    against the same file. Without a lock this races: an interleaved
+    load-modify-save loses updates or corrupts the workbook."""
+    path = tmp_path / "telemetry.xlsx"
+    n = 12
+
+    with ThreadPoolExecutor(max_workers=n) as pool:
+        list(
+            pool.map(
+                lambda i: append_ledger(
+                    path, {"batch_id": "b1", "run_id": f"r{i}", "document": f"doc{i}.pdf"}, ()
+                ),
+                range(n),
+            )
+        )
+
+    runs_sheet = load_workbook(path)["Runs"]
+    assert runs_sheet.max_row == n + 1  # header row + one per call, none lost
+    documents = {row[SUMMARY_COLUMNS.index("document")].value for row in runs_sheet.iter_rows(min_row=2)}
+    assert documents == {f"doc{i}.pdf" for i in range(n)}
+
+
+def test_control_characters_are_stripped_instead_of_failing_the_write(tmp_path):
+    """OCR on a noisy scan can hand the model a NULL byte, a lone UTF-16
+    surrogate, or a Unicode noncharacter. openpyxl's own check only catches
+    the first kind; its lxml backend rejects all three at save time (`All
+    strings must be XML compatible`), which used to fail the whole document
+    after a correct, already-paid-for extraction. Stripping all three is
+    better than losing the run."""
+    path = tmp_path / "extraction.xlsx"
+    dirty = "Cash\x00App claim\x0bnote" + chr(0xD800) + "X" + chr(0xFFFE) + chr(0xFFFF)
+
+    write_workbook(
+        path,
+        final_rows=[{"Claimant Name": dirty}],
+        final_columns=["Claimant Name"],
+        raw_rows=[],
+        raw_columns=[],
+        issues=[],
+        calls=[],
+        summary={"document": "d.pdf"},
+    )
+
+    sheet = load_workbook(path)["Final Table"]
+    assert sheet.cell(row=2, column=1).value == "CashApp claimnoteX"
